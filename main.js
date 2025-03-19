@@ -444,7 +444,7 @@ function updateIntroAnimation() {
     
     // Start from a wide angle view
     const startRadius = 20;
-    const endRadius = 4.5;
+    const endRadius = 6;
     const radius = startRadius + (endRadius - startRadius) * eased;
     
     // Rotate around and zoom in
