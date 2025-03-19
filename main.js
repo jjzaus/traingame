@@ -5,7 +5,7 @@ const TRAIN_SPEED = 0.125;
 let trainPosition = 0;
 let cameraAngleHorizontal = 0;
 let cameraAngleVertical = 0;
-let CAMERA_DISTANCE = 10; // Will be updated to 5 at end of intro
+let CAMERA_DISTANCE = 5; // Will be updated to 5 at end of intro
 let isFirstPerson = false;
 let isMouseDown = false;
 let lastMouseX = 0;
@@ -15,6 +15,12 @@ let introStartTime = 0;
 let finalIntroPosition = new THREE.Vector3();
 let finalIntroTarget = new THREE.Vector3();
 const INTRO_DURATION = 10000; // 5 seconds for the intro animation
+let touchVelocityX = 0;
+let touchVelocityY = 0;
+let lastTouchX = 0;
+let lastTouchY = 0;
+let lastTouchTime = 0;
+const MOMENTUM_DECAY = 0.95;
 
 // Initialize the scene
 function init() {
@@ -78,51 +84,107 @@ function createWheel() {
 }
 
 function createTrain() {
-    const trainGeometry = new THREE.BoxGeometry(5, 1, 1);
-    const trainMaterial = new THREE.MeshPhongMaterial({ color: 0x3366ff });
-    train = new THREE.Mesh(trainGeometry, trainMaterial);
-    train.position.y = 0.8;
+    // Create main train body
+    const trainGroup = new THREE.Group();
+    
+    // Main body (medium grey #686868)
+    const bodyGeometry = new THREE.BoxGeometry(5, 1, 1);
+    const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const trainBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    trainGroup.add(trainBody);
 
-    // Add wheels to train
+    // Add headlight
+    const headlightGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.12, 16);
+    const headlightMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0xFFFFCC
+    });
+    const headlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
+    headlight.rotation.z = Math.PI / 2;
+    headlight.position.set(2.45, 0, 0);
+    trainGroup.add(headlight);
+
+    // Add text to the side
+    const textGeometry = new THREE.PlaneGeometry(4.5, 0.5);
+    const textCanvas = document.createElement('canvas');
+    const textContext = textCanvas.getContext('2d');
+    textCanvas.width = 512;
+    textCanvas.height = 64;
+
+    // Set up the canvas for text
+    textContext.fillStyle = 'white';
+    textContext.font = 'bold 48px "Comic Sans MS", cursive';
+    textContext.textBaseline = 'middle';
+    textContext.textAlign = 'center';
+    textContext.fillText('ILFORD EXPRESS', textCanvas.width/2, textCanvas.height/2);
+
+    const textTexture = new THREE.CanvasTexture(textCanvas);
+    const textMaterial = new THREE.MeshBasicMaterial({
+        map: textTexture,
+        transparent: true,
+        side: THREE.DoubleSide
+    });
+
+    const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+    textMesh.position.set(0, 0, -0.51); // Position on right side
+    textMesh.rotateY(Math.PI); // Rotate to face outward
+    trainGroup.add(textMesh);
+
+    // Add wheels using existing wheel positions
     const wheelPositions = [
-        // Front wheels
-        [1, -0.43, 0.4],
-        [1, -0.43, -0.4],
-        [1.7, -0.43, 0.4],
-        [1.7, -0.43, -0.4],
-        // Back wheels
-        [-1, -0.43, 0.4],
-        [-1, -0.43, -0.4],
-        [-1.7, -0.43, 0.4],
-        [-1.7, -0.43, -0.4]
+        [1, -0.47, 0.4],
+        [1, -0.47, -0.4],
+        [1.7, -0.47, 0.4],
+        [1.7, -0.47, -0.4],
+        [-1, -0.47, 0.4],
+        [-1, -0.47, -0.4],
+        [-1.7, -0.47, 0.4],
+        [-1.7, -0.47, -0.4]
     ];
 
     wheelPositions.forEach(pos => {
         const wheel = createWheel();
         wheel.position.set(...pos);
-        train.add(wheel);
+        trainGroup.add(wheel);
     });
 
+    trainGroup.position.y = 0.8;
+    train = trainGroup;
     scene.add(train);
 
-    // Add carriages
+    // Create carriages
     const carriageGeometry = new THREE.BoxGeometry(5, 1, 1);
-    const carriageMaterial = new THREE.MeshPhongMaterial({ color: 0x808080 });
+    const carriageMaterial = new THREE.MeshPhongMaterial({ color: 0x1a472a }); // Dark green
     
-    for (let i = 0; i < 6; i++) {
-        const carriage = new THREE.Mesh(carriageGeometry, carriageMaterial);
-        carriage.position.y = 0.8;
-        carriage.position.x = train.position.x - (i + 1) * 5;
+    // Create white stripe geometry
+    const stripeGeometry = new THREE.BoxGeometry(5, 0.1, 0.02);
+    const stripeMaterial = new THREE.MeshPhongMaterial({ color: 0xFFFFFF });
 
-        // Add wheels to carriage using same positions
+    for (let i = 0; i < 6; i++) {
+        const carriageGroup = new THREE.Group();
+        
+        // Main carriage body
+        const carriageBody = new THREE.Mesh(carriageGeometry, carriageMaterial);
+        carriageGroup.add(carriageBody);
+
+        // Add white stripes on both sides
+        const leftStripe = new THREE.Mesh(stripeGeometry, stripeMaterial);
+        leftStripe.position.set(0, -0.4, 0.51); // Left side
+        carriageGroup.add(leftStripe);
+
+        const rightStripe = new THREE.Mesh(stripeGeometry, stripeMaterial);
+        rightStripe.position.set(0, -0.4, -0.51); // Right side
+        carriageGroup.add(rightStripe);
+
+        // Add wheels
         wheelPositions.forEach(pos => {
             const wheel = createWheel();
             wheel.position.set(...pos);
-            carriage.add(wheel);
+            carriageGroup.add(wheel);
         });
 
-        carriages.push(carriage);
-        scene.add(carriage);
+        carriageGroup.position.set(train.position.x - (i + 1) * 5, 0.8, 0);
+        carriages.push(carriageGroup);
+        scene.add(carriageGroup);
     }
 }
 
@@ -130,7 +192,7 @@ function createTrack() {
     const curve = generateTrackCurve();
     
     // Create two parallel tracks
-    const railGeometry = new THREE.TubeGeometry(curve, 100, 0.1, 8, false); // Reduced radius to 0.1
+    const railGeometry = new THREE.TubeGeometry(curve, 50, 0.05, 6, false); // Reduced radius to 0.1
     const railMaterial = new THREE.MeshPhongMaterial({ color: 0x666666 });
     
     // Create first rail
@@ -141,8 +203,8 @@ function createTrack() {
     const rail2 = rail1.clone();
     
     // Offset the rails to run parallel
-    rail1.position.z = 0.5;  // Move first rail to one side
-    rail2.position.z = -0.5; // Move second rail to other side
+    rail1.position.z = 0.43;  // Move first rail to one side
+    rail2.position.z = -0.43; // Move second rail to other side
     
     scene.add(rail2);
     
@@ -156,7 +218,7 @@ function createTrack() {
     const tieMaterial = new THREE.MeshPhongMaterial({ color: 0x4d3319 }); // Brown color for wooden ties
     
     // Add ties along the track
-    const numTies = 2000;
+    const numTies = 1000;
     for (let i = 0; i < numTies; i++) {
         const progress = i / numTies;
         const point = curve.getPointAt(progress);
@@ -264,13 +326,67 @@ function initMouseControls() {
     const canvas = renderer.domElement;
     
     canvas.addEventListener('mousedown', (e) => {
-        if (!introAnimationComplete) return; // Prevent camera control during intro
+        if (!introAnimationComplete) {
+            skipIntroAnimation();
+            return;
+        }
         isMouseDown = true;
         lastMouseX = e.clientX;
         lastMouseY = e.clientY;
     });
 
-    canvas.addEventListener('mousemove', (e) => {
+    // Touch controls
+    canvas.addEventListener('touchstart', (e) => {
+        if (!introAnimationComplete) {
+            skipIntroAnimation();
+            return;
+        }
+        isMouseDown = true;
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        lastTouchTime = Date.now();
+        touchVelocityX = 0;
+        touchVelocityY = 0;
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+        if (!isMouseDown || isFirstPerson) return;
+        e.preventDefault();
+
+        const currentTime = Date.now();
+        const deltaTime = currentTime - lastTouchTime;
+        const touchX = e.touches[0].clientX;
+        const touchY = e.touches[0].clientY;
+
+        // Calculate velocity
+        if (deltaTime > 0) {
+            touchVelocityX = (touchX - lastTouchX) / deltaTime;
+            touchVelocityY = (touchY - lastTouchY) / deltaTime;
+        }
+
+        // Update camera angles
+        cameraAngleHorizontal += (touchX - lastTouchX) * 0.005;
+        
+        const verticalSensitivity = 0.002;
+        const minVerticalAngle = 0;
+        const maxVerticalAngle = 0.2;
+        
+        cameraAngleVertical = Math.max(minVerticalAngle, 
+            Math.min(maxVerticalAngle, 
+                cameraAngleVertical - (touchY - lastTouchY) * verticalSensitivity
+            )
+        );
+
+        lastTouchX = touchX;
+        lastTouchY = touchY;
+        lastTouchTime = currentTime;
+    });
+
+    canvas.addEventListener('touchend', () => {
+        isMouseDown = false;
+    });
+
+    window.addEventListener('mousemove', (e) => {
         if (!isMouseDown || isFirstPerson) return;
 
         const deltaX = e.clientX - lastMouseX;
@@ -398,6 +514,22 @@ function updateCamera() {
 function animate() {
     requestAnimationFrame(animate);
     
+    // Apply touch momentum when not being touched
+    if (!isMouseDown && !isFirstPerson && introAnimationComplete) {
+        if (Math.abs(touchVelocityX) > 0.001 || Math.abs(touchVelocityY) > 0.001) {
+            cameraAngleHorizontal += touchVelocityX * 0.1;
+            
+            const verticalDelta = -touchVelocityY * 0.05;
+            cameraAngleVertical = Math.max(0, Math.min(0.2, 
+                cameraAngleVertical + verticalDelta
+            ));
+
+            // Apply decay to velocities
+            touchVelocityX *= MOMENTUM_DECAY;
+            touchVelocityY *= MOMENTUM_DECAY;
+        }
+    }
+
     // Move train forward
     trainPosition += TRAIN_SPEED;
     if (trainPosition > TRACK_LENGTH / 2) {
@@ -422,7 +554,7 @@ function animate() {
     
     const rotationMatrix = new THREE.Matrix4().makeBasis(right, up, forward);
     train.setRotationFromMatrix(rotationMatrix);
-    train.rotateY(Math.PI / 2); // Rotate 90 degrees to align with track
+    train.rotateY(-Math.PI / 2); // Changed from PI/2 to -PI/2 to reverse orientation
     
     // Update carriages with the same orientation logic
     carriages.forEach((carriage, index) => {
@@ -440,7 +572,7 @@ function animate() {
         
         const carriageRotationMatrix = new THREE.Matrix4().makeBasis(carriageRight, up, carriageForward);
         carriage.setRotationFromMatrix(carriageRotationMatrix);
-        carriage.rotateY(Math.PI / 2);
+        carriage.rotateY(-Math.PI / 2); // Changed from PI/2 to -PI/2 to match train
     });
     
     // Replace the existing camera update code with this:
@@ -473,6 +605,36 @@ function generateTrackCurve() {
     
     trackPoints.push(new THREE.Vector3(TRACK_LENGTH/2, 0, 0));
     return new THREE.CatmullRomCurve3(trackPoints);
+}
+
+// Add this function to handle skipping the intro
+function skipIntroAnimation() {
+    if (!introAnimationComplete) {
+        introAnimationComplete = true;
+        
+        // Set camera to final position
+        camera.position.set(
+            train.position.x + Math.cos(Math.PI * 1.75) * 4.5,
+            2,
+            train.position.z + Math.sin(Math.PI * 1.75) * 4.5
+        );
+        camera.lookAt(train.position);
+        
+        // Store the final position and target
+        finalIntroPosition.copy(camera.position);
+        finalIntroTarget.copy(train.position);
+        
+        // Calculate the camera angles based on final position
+        const offset = finalIntroPosition.clone().sub(finalIntroTarget);
+        cameraAngleHorizontal = Math.atan2(offset.z, offset.x);
+        cameraAngleVertical = Math.asin(offset.y / offset.length());
+        
+        // Adjust CAMERA_DISTANCE to match final intro radius
+        CAMERA_DISTANCE = offset.length();
+        
+        // Show the camera switch button
+        document.getElementById('cameraSwitch').style.display = 'block';
+    }
 }
 
 // Initialize and start animation
