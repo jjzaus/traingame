@@ -103,32 +103,6 @@ function createTrain() {
     headlight.position.set(2.45, 0, 0);
     trainGroup.add(headlight);
 
-    // Add text to the side
-    const textGeometry = new THREE.PlaneGeometry(4.5, 0.5);
-    const textCanvas = document.createElement('canvas');
-    const textContext = textCanvas.getContext('2d');
-    textCanvas.width = 512;
-    textCanvas.height = 64;
-
-    // Set up the canvas for text
-    textContext.fillStyle = 'white';
-    textContext.font = 'bold 48px "Comic Sans MS", cursive';
-    textContext.textBaseline = 'middle';
-    textContext.textAlign = 'center';
-    textContext.fillText('ILFORD EXPRESS', textCanvas.width/2, textCanvas.height/2);
-
-    const textTexture = new THREE.CanvasTexture(textCanvas);
-    const textMaterial = new THREE.MeshBasicMaterial({
-        map: textTexture,
-        transparent: true,
-        side: THREE.DoubleSide
-    });
-
-    const textMesh = new THREE.Mesh(textGeometry, textMaterial);
-    textMesh.position.set(0, 0, -0.51); // Position on right side
-    textMesh.rotateY(Math.PI); // Rotate to face outward
-    trainGroup.add(textMesh);
-
     // Add wheels using existing wheel positions
     const wheelPositions = [
         [1, -0.47, 0.4],
@@ -241,52 +215,80 @@ function createTrack() {
 function createForest() {
     // Create first set of trees (height 5)
     for (let i = 0; i < 2000; i++) {
-        const treeGeometry = new THREE.ConeGeometry(1, 5, 8);
-        const treeMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
-        const tree = new THREE.Mesh(treeGeometry, treeMaterial);
+        const treeGroup = new THREE.Group();
         
-        // Random position on either side of the track
+        // Create cone (tree top)
+        const coneHeight = 5;
+        const coneRadius = 1;
+        const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 8);
+        const coneMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+        const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+        cone.position.y = 1.5;
+        treeGroup.add(cone);
+        
+        // Create trunk with new color
+        const trunkRadius = coneRadius/4;
+        const trunkHeight = coneHeight/5;
+        const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
+        const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x964B00 }); // Changed from 0x4d3319 to 0x964B00
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.y = -1;
+        treeGroup.add(trunk);
+        
+        // Position the tree group
         const side = Math.random() > 0.5 ? 1 : -1;
         const x = (Math.random() - 0.5) * TRACK_LENGTH;
         
-        // Get the z-position of the track at this x coordinate
         const trackProgress = (x + TRACK_LENGTH/2) / TRACK_LENGTH;
         const trackPoint = new THREE.CatmullRomCurve3(trackPoints).getPointAt(Math.max(0, Math.min(1, trackProgress)));
         
-        // Place trees at a minimum distance from the track (between 5 and 15 units)
         const minDistance = 5;
         const randomExtra = Math.random() * 100;
         const z = trackPoint.z + (minDistance + randomExtra) * side;
         
-        tree.position.set(x, 1.5, z);
+        treeGroup.position.set(x, 1.5, z);
         
-        trees.push(tree);
-        scene.add(tree);
+        trees.push(treeGroup);
+        scene.add(treeGroup);
     }
 
     // Create second set of taller trees (height 7)
     for (let i = 0; i < 2000; i++) {
-        const treeGeometry = new THREE.ConeGeometry(1.2, 7, 8);
-        const treeMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 }); // Slightly darker green
-        const tree = new THREE.Mesh(treeGeometry, treeMaterial);
+        const treeGroup = new THREE.Group();
         
-        // Random position on either side of the track
+        // Create cone (tree top)
+        const coneHeight = 7;
+        const coneRadius = 1.2;
+        const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 8);
+        const coneMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+        const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+        cone.position.y = 2.5;
+        treeGroup.add(cone);
+        
+        // Create trunk with new color
+        const trunkRadius = coneRadius/3;
+        const trunkHeight = coneHeight/3;
+        const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
+        const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x964B00 }); // Changed from 0x4d3319 to 0x964B00
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.y = -2;
+        treeGroup.add(trunk);
+        
+        // Position the tree group
         const side = Math.random() > 0.5 ? 1 : -1;
         const x = (Math.random() - 0.5) * TRACK_LENGTH;
         
-        // Get the z-position of the track at this x coordinate
         const trackProgress = (x + TRACK_LENGTH/2) / TRACK_LENGTH;
         const trackPoint = new THREE.CatmullRomCurve3(trackPoints).getPointAt(Math.max(0, Math.min(1, trackProgress)));
         
-        // Place trees at a minimum distance from the track (between 5 and 15 units)
         const minDistance = 10;
         const randomExtra = Math.random() * 100;
         const z = trackPoint.z + (minDistance + randomExtra) * side;
         
-        tree.position.set(x, 2, z); // Slightly higher base position
+        treeGroup.position.set(x, 2, z);
         
-        trees.push(tree);
-        scene.add(tree);
+        trees.push(treeGroup);
+        scene.add(treeGroup);
     }
 }
 
@@ -444,7 +446,7 @@ function updateIntroAnimation() {
     
     // Start from a wide angle view
     const startRadius = 20;
-    const endRadius = 6;
+    const endRadius = 4.5;
     const radius = startRadius + (endRadius - startRadius) * eased;
     
     // Rotate around and zoom in
