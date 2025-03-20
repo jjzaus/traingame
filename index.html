@@ -30,10 +30,32 @@
         #cameraSwitch:hover {
             background-color: rgba(255, 255, 255, 1);
         }
+        .window-buttons {
+            position: fixed;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+        }
+        .window-buttons button {
+            padding: 10px 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .window-buttons button:hover {
+            background-color: rgba(255, 255, 255, 1);
+        }
     </style>
 </head>
 <body>
     <button id="cameraSwitch">Switch View</button>
+    <div class="window-buttons">
+        <button id="leftWindow">Left Window</button>
+        <button id="rightWindow">Right Window</button>
+    </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.0/dist/nipplejs.min.js"></script>
     <script src="main.js"></script>

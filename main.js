@@ -1,7 +1,7 @@
 let scene, camera, renderer, train, track, carriages = [];
 let trees = [];
 const TRACK_LENGTH = 1000;
-const TRAIN_SPEED = 0.125;
+const TRAIN_SPEED = 0.05;
 let trainPosition = 0;
 let cameraAngleHorizontal = 0;
 let cameraAngleVertical = 0;
@@ -75,48 +75,168 @@ function init() {
     initCameraSwitch();
 }
 
-function createWheel() {
-    const wheelGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.1, 16);
+function createWheel(radius) {
+    const wheelGeometry = new THREE.CylinderGeometry(radius, radius, 0.1, 16);
     const wheelMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 }); // Dark gray
     const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
-    wheel.rotateX(Math.PI / 2); // Changed from rotateZ to rotateX for correct orientation
+    wheel.rotateX(Math.PI / 2);
     return wheel;
 }
 
 function createTrain() {
-    // Create main train body
     const trainGroup = new THREE.Group();
     
-    // Main body (medium grey #686868)
-    const bodyGeometry = new THREE.BoxGeometry(5, 1, 1);
+    // Main body - adjust y from 0.38 to 0.50
+    const bodyGeometry = new THREE.CylinderGeometry(.5, .5, 2.5, 16);
     const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
     const trainBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    trainBody.position.set(.6, .50, 0); // Changed from 0.38 to 0.50
+    trainBody.rotateZ(Math.PI / 2);
     trainGroup.add(trainBody);
 
-    // Add headlight
-    const headlightGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.12, 16);
-    const headlightMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0xFFFFCC
+    // Add smokestack (two parts)
+    const stackBaseMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    
+    // Skinny base cylinder
+    const stackBaseGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.3, 16);
+    const stackBase = new THREE.Mesh(stackBaseGeometry, stackBaseMaterial);
+    stackBase.position.set(1.5, 0.92, 0); // Changed from 0.8 to 0.92
+    trainGroup.add(stackBase);
+    
+    // Wider top cylinder
+    const stackTopGeometry = new THREE.CylinderGeometry(0.15, 0.12, 0.2, 16);
+    const stackTop = new THREE.Mesh(stackTopGeometry, stackBaseMaterial);
+    stackTop.position.set(1.5, 1.17, 0); // Changed from 1.05 to 1.17
+    trainGroup.add(stackTop);
+
+    // Add train cockpit
+    const cockpitGeometry = new THREE.BoxGeometry(1.2, 1.2, 1.5, 16);
+    const cockpitMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const trainCockpit = new THREE.Mesh(cockpitGeometry, cockpitMaterial);
+    trainCockpit.rotateY(Math.PI / 2);
+    trainCockpit.position.set(-1.25, 0.75, 0);
+    trainGroup.add(trainCockpit);
+
+    // Add rear door to cockpit
+    const doorGeometry = new THREE.PlaneGeometry(0.5, 0.8);
+    const doorMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x111111,  // Very dark grey/black
+        side: THREE.DoubleSide
     });
+    const door = new THREE.Mesh(doorGeometry, doorMaterial);
+    door.position.set(-2.01, 0.75, 0);
+    door.rotateY(Math.PI / 2);
+    trainGroup.add(door);
+
+    // Add windows to cockpit
+    const windowMaterial = new THREE.MeshPhongMaterial({
+        color: 0x88CCFF,
+        transparent: true,
+        opacity: 0.6,
+        shininess: 100
+    });
+
+    // Front window
+    const frontWindowGeometry = new THREE.PlaneGeometry(0.6, 0.8);
+    const frontWindow = new THREE.Mesh(frontWindowGeometry, windowMaterial);
+    frontWindow.position.set(-1.65, 0.85, 0);
+    frontWindow.rotateY(Math.PI / 2);
+    trainGroup.add(frontWindow);
+
+    // Left window
+    const leftWindowGeometry = new THREE.PlaneGeometry(0.8, 0.4);
+    const leftWindow = new THREE.Mesh(leftWindowGeometry, windowMaterial);
+    leftWindow.position.set(-1.25, 0.85, 0.61);
+    trainGroup.add(leftWindow);
+
+    // Right window
+    const rightWindowGeometry = new THREE.PlaneGeometry(0.8, 0.4);
+    const rightWindow = new THREE.Mesh(rightWindowGeometry, windowMaterial);
+    rightWindow.position.set(-1.25, 0.85, -0.61);
+    rightWindow.rotateY(Math.PI);
+    trainGroup.add(rightWindow);
+
+    // Add train frame
+    const frameGeometry = new THREE.BoxGeometry(1, .2, 2, 16);
+    const frameMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const trainFrame = new THREE.Mesh(frameGeometry, frameMaterial);
+    trainFrame.rotateY(Math.PI / 2);
+    trainFrame.position.set(1, -.1, 0);
+    trainGroup.add(trainFrame);
+
+    // Add train underframe
+    const underframeGeometry = new THREE.BoxGeometry(.7, .5, 3.7, 16);
+    const underframeMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const trainUnderframe = new THREE.Mesh(underframeGeometry, underframeMaterial);
+    trainUnderframe.rotateY(Math.PI / 2);
+    trainUnderframe.position.set(0, -.1, 0);
+    trainGroup.add(trainUnderframe);
+
+    // Add headlight - adjust y from 0.38 to 0.50
+    const headlightGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.12, 16);
+    const headlightMaterial = new THREE.MeshPhongMaterial({ color: 0xFFFFCC});
     const headlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
     headlight.rotation.z = Math.PI / 2;
-    headlight.position.set(2.45, 0, 0);
+    headlight.position.set(1.83, 0.50, 0); // Changed from 0.38 to 0.50
     trainGroup.add(headlight);
 
-    // Add wheels using existing wheel positions
-    const wheelPositions = [
+    // Add snow plow / shovel
+    const shovelGeometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array([
+        // Left triangle
+        0, -0.3, 0.5,     // Bottom left (at rail)
+        0, 0.3, 0.5,      // Top left
+        .7, 0.43, 0,       // Top point
+        
+        // Right triangle
+        0, -0.3, -0.5,    // Bottom right (at rail)
+        0, 0.3, -0.5,     // Top right
+        .7, 0.43, 0,       // Top point
+        
+        // Bottom triangle
+        0, -0.3, 0.5,     // Bottom left
+        0, -0.3, -0.5,    // Bottom right
+        .7, 0.43, 0        // Top point
+    ]);
+    
+    shovelGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    shovelGeometry.computeVertexNormals();
+    
+    const shovelMaterial = new THREE.MeshPhongMaterial({ 
+        color: 0x8B8B8B,   // Slightly lighter than train body
+        side: THREE.DoubleSide
+    });
+    
+    const shovel = new THREE.Mesh(shovelGeometry, shovelMaterial);
+    shovel.position.set(1.99, -.3, 0); // Position at front of train
+    shovel.rotateX(Math.PI);
+    trainGroup.add(shovel);
+
+    // Add wheels using different sizes for front and rear
+    const frontWheelPositions = [
         [1, -0.47, 0.4],
         [1, -0.47, -0.4],
         [1.7, -0.47, 0.4],
-        [1.7, -0.47, -0.4],
-        [-1, -0.47, 0.4],
-        [-1, -0.47, -0.4],
-        [-1.7, -0.47, 0.4],
-        [-1.7, -0.47, -0.4]
+        [1.7, -0.47, -0.4]
     ];
 
-    wheelPositions.forEach(pos => {
-        const wheel = createWheel();
+    const rearWheelPositions = [
+        [-.5, -0.32, 0.4],
+        [-.5, -0.32, -0.4],
+        [-1.4, -0.32, 0.4],
+        [-1.4, -0.32, -0.4]
+    ];
+
+    // Add front wheels (normal size)
+    frontWheelPositions.forEach(pos => {
+        const wheel = createWheel(0.3); // Original size
+        wheel.position.set(...pos);
+        trainGroup.add(wheel);
+    });
+
+    // Add rear wheels (50% larger)
+    rearWheelPositions.forEach(pos => {
+        const wheel = createWheel(0.45); // 50% larger
         wheel.position.set(...pos);
         trainGroup.add(wheel);
     });
@@ -126,7 +246,7 @@ function createTrain() {
     scene.add(train);
 
     // Create carriages
-    const carriageGeometry = new THREE.BoxGeometry(5, 1, 1);
+    const carriageGeometry = new THREE.BoxGeometry(5, 1.5, 1);
     const carriageMaterial = new THREE.MeshPhongMaterial({ color: 0x1a472a }); // Dark green
     
     // Create white stripe geometry
@@ -139,19 +259,26 @@ function createTrain() {
         // Main carriage body
         const carriageBody = new THREE.Mesh(carriageGeometry, carriageMaterial);
         carriageGroup.add(carriageBody);
+        carriageBody.position.set(0, 0.5, 0);
 
         // Add white stripes on both sides
         const leftStripe = new THREE.Mesh(stripeGeometry, stripeMaterial);
-        leftStripe.position.set(0, -0.4, 0.51); // Left side
+        leftStripe.position.set(0, 0.9, 0.51); // Left side
         carriageGroup.add(leftStripe);
 
         const rightStripe = new THREE.Mesh(stripeGeometry, stripeMaterial);
-        rightStripe.position.set(0, -0.4, -0.51); // Right side
+        rightStripe.position.set(0, .9, -0.51); // Right side
         carriageGroup.add(rightStripe);
 
         // Add wheels
-        wheelPositions.forEach(pos => {
-            const wheel = createWheel();
+        frontWheelPositions.forEach(pos => {
+            const wheel = createWheel(0.3);
+            wheel.position.set(...pos);
+            carriageGroup.add(wheel);
+        });
+
+        rearWheelPositions.forEach(pos => {
+            const wheel = createWheel(0.45);
             wheel.position.set(...pos);
             carriageGroup.add(wheel);
         });
@@ -213,17 +340,18 @@ function createTrack() {
 }
 
 function createForest() {
+
     // Create first set of trees (height 5)
     for (let i = 0; i < 2000; i++) {
         const treeGroup = new THREE.Group();
         
         // Create cone (tree top)
-        const coneHeight = 5;
+        const coneHeight = 3;
         const coneRadius = 1;
         const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 8);
         const coneMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
         const cone = new THREE.Mesh(coneGeometry, coneMaterial);
-        cone.position.y = 1.5;
+        cone.position.y = .5;
         treeGroup.add(cone);
         
         // Create trunk with new color
@@ -242,7 +370,8 @@ function createForest() {
         const trackProgress = (x + TRACK_LENGTH/2) / TRACK_LENGTH;
         const trackPoint = new THREE.CatmullRomCurve3(trackPoints).getPointAt(Math.max(0, Math.min(1, trackProgress)));
         
-        const minDistance = 5;
+        const minDistance = 3;
+        const maxDistance = 12;
         const randomExtra = Math.random() * 100;
         const z = trackPoint.z + (minDistance + randomExtra) * side;
         
@@ -282,6 +411,7 @@ function createForest() {
         const trackPoint = new THREE.CatmullRomCurve3(trackPoints).getPointAt(Math.max(0, Math.min(1, trackProgress)));
         
         const minDistance = 10;
+        const maxDistance = 15;
         const randomExtra = Math.random() * 100;
         const z = trackPoint.z + (minDistance + randomExtra) * side;
         
@@ -419,21 +549,72 @@ function initMouseControls() {
 
 function initCameraSwitch() {
     const button = document.getElementById('cameraSwitch');
-    button.style.display = 'none'; // Hide button during intro
+    const leftWindowBtn = document.getElementById('leftWindow');
+    const rightWindowBtn = document.getElementById('rightWindow');
     
-    const showButton = () => {
+    button.style.display = 'none';
+    leftWindowBtn.style.display = 'none';
+    rightWindowBtn.style.display = 'none';
+    
+    const showButtons = () => {
         if (introAnimationComplete) {
             button.style.display = 'block';
-            document.removeEventListener('click', showButton);
+            leftWindowBtn.style.display = 'block';
+            rightWindowBtn.style.display = 'block';
+            document.removeEventListener('click', showButtons);
         }
     };
     
-    document.addEventListener('click', showButton);
+    document.addEventListener('click', showButtons);
     
+    // Existing camera switch button logic
     button.addEventListener('click', () => {
         if (!introAnimationComplete) return;
         isFirstPerson = !isFirstPerson;
         button.textContent = isFirstPerson ? 'Third Person' : 'First Person';
+    });
+
+    // Add window view handlers
+    leftWindowBtn.addEventListener('click', () => {
+        if (!introAnimationComplete) return;
+        isFirstPerson = true;
+        const sideOffset = new THREE.Vector3(-1.25, 0.85, 0.61); // Match left window position
+        camera.position.copy(train.position).add(sideOffset);
+        
+        // Create a matrix to get train's current orientation
+        const trainMatrix = new THREE.Matrix4();
+        train.updateMatrix();
+        trainMatrix.copy(train.matrix);
+        
+        // Create a point 10 units to the left of the train in world space
+        const lookDirection = new THREE.Vector3(0, 0, 1); // Point perpendicular to train
+        lookDirection.applyMatrix4(trainMatrix); // Transform to world space
+        
+        const lookAtPoint = camera.position.clone().add(lookDirection.multiplyScalar(10));
+        camera.lookAt(lookAtPoint);
+        
+        button.textContent = 'Third Person';
+    });
+
+    rightWindowBtn.addEventListener('click', () => {
+        if (!introAnimationComplete) return;
+        isFirstPerson = true;
+        const sideOffset = new THREE.Vector3(-1.25, 0.85, -0.61); // Match right window position
+        camera.position.copy(train.position).add(sideOffset);
+        
+        // Create a matrix to get train's current orientation
+        const trainMatrix = new THREE.Matrix4();
+        train.updateMatrix();
+        trainMatrix.copy(train.matrix);
+        
+        // Create a point 10 units to the right of the train in world space
+        const lookDirection = new THREE.Vector3(0, 0, -1); // Point perpendicular to train
+        lookDirection.applyMatrix4(trainMatrix); // Transform to world space
+        
+        const lookAtPoint = camera.position.clone().add(lookDirection.multiplyScalar(10));
+        camera.lookAt(lookAtPoint);
+        
+        button.textContent = 'Third Person';
     });
 }
 
