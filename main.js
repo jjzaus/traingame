@@ -1,7 +1,7 @@
 let scene, camera, renderer, train, track, carriages = [];
 let trees = [];
 const TRACK_LENGTH = 1000;
-const TRAIN_SPEED = 0.05;
+const TRAIN_SPEED = 0.1;
 let trainPosition = 0;
 let cameraAngleHorizontal = 0;
 let cameraAngleVertical = 0;
@@ -21,6 +21,10 @@ let lastTouchX = 0;
 let lastTouchY = 0;
 let lastTouchTime = 0;
 const MOMENTUM_DECAY = 0.95;
+let barkTexture;
+let smokeParticles;
+const NUM_PARTICLES = 1000;
+let particleSystem;
 
 // Initialize the scene
 function init() {
@@ -51,6 +55,15 @@ function init() {
     directionalLight.position.set(0, 10, 0);
     scene.add(directionalLight);
 
+    // Load bark texture
+    const textureLoader = new THREE.TextureLoader();
+    barkTexture = textureLoader.load('bark.jpg');
+    barkTexture.wrapS = THREE.RepeatWrapping;
+    barkTexture.wrapT = THREE.RepeatWrapping;
+    barkTexture.repeat.set(1, 1);
+    barkTexture.minFilter = THREE.LinearMipMapLinearFilter;
+    barkTexture.generateMipmaps = true;
+
     // Create train
     createTrain();
     
@@ -73,6 +86,7 @@ function init() {
     // Initialize mouse controls
     initMouseControls();
     initCameraSwitch();
+    createSmokeParticles();
 }
 
 function createWheel(radius) {
@@ -108,6 +122,54 @@ function createTrain() {
     const stackTop = new THREE.Mesh(stackTopGeometry, stackBaseMaterial);
     stackTop.position.set(1.5, 1.17, 0); // Changed from 1.05 to 1.17
     trainGroup.add(stackTop);
+
+    // Add step ladders at the rear of the cockpit
+    const stepLadderGeometry = new THREE.BoxGeometry(0.4, 0.05, 0.15);
+    const stepLadderMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 }); // Dark gray like wheels
+
+    // Left ladder
+    const leftLadderGroup = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+        const step = new THREE.Mesh(stepLadderGeometry, stepLadderMaterial);
+        step.position.set(-1.85, 0.1 + (i * 0.2), 0.4); // Increasing height for each step
+        leftLadderGroup.add(step);
+
+        // Add vertical supports
+        if (i === 0) {
+            const supportGeometry = new THREE.BoxGeometry(0.05, 0.6, 0.05);
+            const frontSupport = new THREE.Mesh(supportGeometry, stepLadderMaterial);
+            const backSupport = new THREE.Mesh(supportGeometry, stepLadderMaterial);
+            
+            frontSupport.position.set(-1.7, 0.3, 0.4);
+            backSupport.position.set(-2.0, 0.3, 0.4);
+            
+            leftLadderGroup.add(frontSupport);
+            leftLadderGroup.add(backSupport);
+        }
+    }
+    trainGroup.add(leftLadderGroup);
+
+    // Right ladder (mirror of left)
+    const rightLadderGroup = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+        const step = new THREE.Mesh(stepLadderGeometry, stepLadderMaterial);
+        step.position.set(-1.85, 0.1 + (i * 0.2), -0.4); // Mirror position on z-axis
+        rightLadderGroup.add(step);
+
+        // Add vertical supports
+        if (i === 0) {
+            const supportGeometry = new THREE.BoxGeometry(0.05, 0.6, 0.05);
+            const frontSupport = new THREE.Mesh(supportGeometry, stepLadderMaterial);
+            const backSupport = new THREE.Mesh(supportGeometry, stepLadderMaterial);
+            
+            frontSupport.position.set(-1.7, 0.3, -0.4);
+            backSupport.position.set(-2.0, 0.3, -0.4);
+            
+            rightLadderGroup.add(frontSupport);
+            rightLadderGroup.add(backSupport);
+        }
+    }
+    trainGroup.add(rightLadderGroup);
 
     // Add train cockpit
     const cockpitGeometry = new THREE.BoxGeometry(1.2, 1.2, 1.5, 16);
@@ -340,25 +402,30 @@ function createTrack() {
 }
 
 function createForest() {
+    // Instead of creating new geometries/materials for each object
+    const sharedGeometry = new THREE.CylinderGeometry(5, 5, 1, 16);
+    const sharedMaterial = new THREE.MeshStandardMaterial({ map: barkTexture });
 
-    // Create first set of trees (height 5)
+    // First set of trees
     for (let i = 0; i < 2000; i++) {
         const treeGroup = new THREE.Group();
         
         // Create cone (tree top)
         const coneHeight = 3;
-        const coneRadius = 1;
+        const coneRadius = .5;
         const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 8);
         const coneMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
         const cone = new THREE.Mesh(coneGeometry, coneMaterial);
         cone.position.y = .5;
         treeGroup.add(cone);
         
-        // Create trunk with new color
+        // Create trunk with bark texture only (no color tint)
         const trunkRadius = coneRadius/4;
         const trunkHeight = coneHeight/5;
         const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
-        const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x964B00 }); // Changed from 0x4d3319 to 0x964B00
+        const trunkMaterial = new THREE.MeshPhongMaterial({ 
+            map: barkTexture
+        }); // Removed color property
         const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
         trunk.position.y = -1;
         treeGroup.add(trunk);
@@ -370,7 +437,7 @@ function createForest() {
         const trackProgress = (x + TRACK_LENGTH/2) / TRACK_LENGTH;
         const trackPoint = new THREE.CatmullRomCurve3(trackPoints).getPointAt(Math.max(0, Math.min(1, trackProgress)));
         
-        const minDistance = 3;
+        const minDistance = 5;
         const maxDistance = 12;
         const randomExtra = Math.random() * 100;
         const z = trackPoint.z + (minDistance + randomExtra) * side;
@@ -381,7 +448,7 @@ function createForest() {
         scene.add(treeGroup);
     }
 
-    // Create second set of taller trees (height 7)
+    // Second set of taller trees
     for (let i = 0; i < 2000; i++) {
         const treeGroup = new THREE.Group();
         
@@ -394,11 +461,13 @@ function createForest() {
         cone.position.y = 2.5;
         treeGroup.add(cone);
         
-        // Create trunk with new color
+        // Create trunk with bark texture only (no color tint)
         const trunkRadius = coneRadius/3;
         const trunkHeight = coneHeight/3;
         const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
-        const trunkMaterial = new THREE.MeshPhongMaterial({ color: 0x964B00 }); // Changed from 0x4d3319 to 0x964B00
+        const trunkMaterial = new THREE.MeshPhongMaterial({ 
+            map: barkTexture
+        }); // Removed color property
         const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
         trunk.position.y = -2;
         treeGroup.add(trunk);
@@ -694,6 +763,156 @@ function updateCamera() {
     }
 }
 
+function createSmokeParticles() {
+    // Create geometry first
+    const particles = new Float32Array(NUM_PARTICLES * 3);
+    const velocities = new Float32Array(NUM_PARTICLES * 3);
+    const opacities = new Float32Array(NUM_PARTICLES);
+    const sizes = new Float32Array(NUM_PARTICLES);
+
+    // Initialize particles with higher Y position and spread them out
+    const stackLocalPos = new THREE.Vector3(1.5, 1.37, 0);
+    for (let i = 0; i < NUM_PARTICLES; i++) {
+        // Spread particles along the trail initially
+        const spreadDistance = Math.random() * 60; // Doubled from 30 to 60 for longer initial trail
+        const heightSpread = Math.random() * 0.2;
+        const sideSpread = (Math.random() - 0.5) * 0.5;
+
+        particles[i * 3] = stackLocalPos.x - spreadDistance; // Spread backwards twice as far
+        particles[i * 3 + 1] = stackLocalPos.y + heightSpread;
+        particles[i * 3 + 2] = stackLocalPos.z + sideSpread;
+
+        // Set initial velocities
+        velocities[i * 3] = -0.1;
+        velocities[i * 3 + 1] = (0.05 + Math.random() * 0.02) * 0.5;
+        velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.01 * 0.5;
+
+        // Set initial opacity based on distance (adjusted for longer trail)
+        opacities[i] = Math.max(0.1, 1 - (spreadDistance / 60)); // Adjusted denominator to match new length
+
+        // Set initial size based on distance (adjusted for longer trail)
+        sizes[i] = 0.2 + (spreadDistance / 60) * 0.6; // Adjusted denominator to match new length
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(particles, 3));
+    geometry.setAttribute('opacity', new THREE.BufferAttribute(opacities, 1));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    // Create a simple circular texture if loading fails
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 32, 32);
+    const defaultTexture = new THREE.CanvasTexture(canvas);
+
+    // Try to load the smoke texture
+    const textureLoader = new THREE.TextureLoader();
+    textureLoader.load(
+        'smoke-particle.png',
+        (texture) => {
+            console.log('Smoke texture loaded successfully');
+            material.map = texture;
+            material.needsUpdate = true;
+        },
+        undefined,
+        (error) => {
+            console.warn('Failed to load smoke texture, using default:', error);
+            material.map = defaultTexture;
+            material.needsUpdate = true;
+        }
+    );
+
+    // Create material with default texture and size attenuation
+    const material = new THREE.PointsMaterial({
+        size: 0.5,          // Initial size
+        map: defaultTexture,
+        transparent: true,
+        opacity: 0.2,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexColors: false,
+        sizeAttenuation: true
+    });
+
+    // Create and add particle system
+    particleSystem = new THREE.Points(geometry, material);
+    train.add(particleSystem);
+
+    // Store particle data
+    smokeParticles = {
+        positions: particles,
+        velocities: velocities,
+        opacities: opacities,
+        sizes: sizes,        // Add sizes to stored attributes
+        geometry: geometry
+    };
+}
+
+function updateSmoke() {
+    if (!smokeParticles) return;
+
+    const positions = smokeParticles.positions;
+    const velocities = smokeParticles.velocities;
+    const opacities = smokeParticles.opacities;
+    const sizes = smokeParticles.sizes;      // Get sizes array
+    const stackLocalPos = new THREE.Vector3(1.5, 1.37, 0);
+
+    for (let i = 0; i < NUM_PARTICLES; i++) {
+        // Update positions with halved velocities
+        positions[i * 3] += velocities[i * 3] * 0.5;         // X movement (50% slower)
+        positions[i * 3 + 1] += velocities[i * 3 + 1] * 0.5; // Y movement (50% slower)
+        positions[i * 3 + 2] += velocities[i * 3 + 2] * 0.5; // Z movement (50% slower)
+
+        // Add more turbulence for wider spread
+        positions[i * 3 + 2] += (Math.random() - 0.5) * 0.01;  // Doubled Z variation
+
+        // After rising 0.1 units, start moving horizontally
+        if (positions[i * 3 + 1] > stackLocalPos.y + 0.1) {
+            velocities[i * 3] = -0.1;                // Base horizontal velocity
+            velocities[i * 3 + 1] *= 0.95;          // Gradual vertical slowdown
+            // Add random horizontal spread
+            positions[i * 3] += (Math.random() - 0.5) * 0.01;  // Wider X spread
+        }
+
+        // Decrease opacity more slowly for longer trail
+        opacities[i] *= 0.99;  // Changed from 0.98 to 0.99
+
+        // Gradually increase size
+        sizes[i] *= 1.5;  // Increase size by 1% each frame
+
+        // Reset if too far left/up or too faint (doubled distance)
+        if (positions[i * 3] < stackLocalPos.x - 30 ||  
+            positions[i * 3 + 1] > stackLocalPos.y + 6 || 
+            opacities[i] < 0.05) {  
+            
+            // Reset position
+            positions[i * 3] = stackLocalPos.x;
+            positions[i * 3 + 1] = stackLocalPos.y;
+            positions[i * 3 + 2] = stackLocalPos.z;
+
+            // Reset velocities
+            velocities[i * 3] = 0;
+            velocities[i * 3 + 1] = (0.05 + Math.random() * 0.02) * 0.5;
+            velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.01 * 0.5;
+
+            // Reset size and opacity
+            sizes[i] = 0.2 + Math.random() * 0.3;  // Reset to initial size range
+            opacities[i] = Math.random();
+        }
+    }
+
+    // Update geometry attributes
+    smokeParticles.geometry.attributes.position.needsUpdate = true;
+    smokeParticles.geometry.attributes.opacity.needsUpdate = true;
+    smokeParticles.geometry.attributes.size.needsUpdate = true;  // Update sizes
+}
+
 function animate() {
     requestAnimationFrame(animate);
     
@@ -761,6 +980,9 @@ function animate() {
     // Replace the existing camera update code with this:
     updateCamera();
     
+    // Update smoke particles
+    updateSmoke();
+    
     renderer.render(scene, camera);
 }
 
@@ -822,4 +1044,18 @@ function skipIntroAnimation() {
 
 // Initialize and start animation
 init();
-animate(); 
+animate();
+
+function cleanup() {
+    // Dispose geometries
+    geometry.dispose();
+    
+    // Dispose materials
+    material.dispose();
+    
+    // Dispose textures
+    texture.dispose();
+    
+    // Remove from scene
+    scene.remove(mesh);
+} 

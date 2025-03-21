@@ -1,0 +1,21 @@
+FROM node:alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy application files
+COPY . .
+
+# Install a development server (if not in package.json)
+RUN npm install -g http-server
+
+# Expose port
+EXPOSE 8080
+
+# Start development server
+CMD ["http-server", "--cors", "-p", "8080"] 
