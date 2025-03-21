@@ -25,6 +25,10 @@ let barkTexture;
 let smokeParticles;
 const NUM_PARTICLES = 1000;
 let particleSystem;
+let trainWheels = [];
+let carriageWheels = [];
+const WHEEL_RPM = 2000;
+const WHEEL_ROTATION_SPEED = (WHEEL_RPM * 2 * Math.PI) / 60; // Convert RPM to radians per second
 
 // Initialize the scene
 function init() {
@@ -89,12 +93,28 @@ function init() {
     createSmokeParticles();
 }
 
-function createWheel(radius) {
+function createWheel(radius, isRightSide) {
+    const wheelGroup = new THREE.Group();
+
+    // Create the wheel
     const wheelGeometry = new THREE.CylinderGeometry(radius, radius, 0.1, 16);
-    const wheelMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 }); // Dark gray
+    const wheelMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
     const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
     wheel.rotateX(Math.PI / 2);
-    return wheel;
+    wheelGroup.add(wheel);
+
+    // Create the axle only for right-side wheels
+    if (isRightSide) {
+        const axleGeometry = new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, 0.9, 8);
+        const axleMaterial = new THREE.MeshPhongMaterial({ color: 0x1a1a1a });
+        const axle = new THREE.Mesh(axleGeometry, axleMaterial);
+        axle.rotateX(Math.PI / 2);
+        axle.position.set(0, 0, .4);
+        wheelGroup.add(axle);
+    }
+
+    trainWheels.push(wheel);
+    return wheelGroup;
 }
 
 function createTrain() {
@@ -289,19 +309,25 @@ function createTrain() {
         [-1.4, -0.32, -0.4]
     ];
 
-    // Add front wheels (normal size)
-    frontWheelPositions.forEach(pos => {
-        const wheel = createWheel(0.3); // Original size
-        wheel.position.set(...pos);
-        trainGroup.add(wheel);
-    });
+    // Add front wheels with paired axles
+    for (let i = 0; i < frontWheelPositions.length; i += 2) {
+        const wheelGroup1 = createWheel(0.3, false);  // Left wheel, no axle
+        const wheelGroup2 = createWheel(0.3, true);   // Right wheel with axle
+        wheelGroup1.position.set(...frontWheelPositions[i]);
+        wheelGroup2.position.set(...frontWheelPositions[i + 1]);
+        trainGroup.add(wheelGroup1);
+        trainGroup.add(wheelGroup2);
+    }
 
-    // Add rear wheels (50% larger)
-    rearWheelPositions.forEach(pos => {
-        const wheel = createWheel(0.45); // 50% larger
-        wheel.position.set(...pos);
-        trainGroup.add(wheel);
-    });
+    // Add rear wheels with paired axles
+    for (let i = 0; i < rearWheelPositions.length; i += 2) {
+        const wheelGroup1 = createWheel(0.45, false);  // Left wheel, no axle
+        const wheelGroup2 = createWheel(0.45, true);   // Right wheel with axle
+        wheelGroup1.position.set(...rearWheelPositions[i]);
+        wheelGroup2.position.set(...rearWheelPositions[i + 1]);
+        trainGroup.add(wheelGroup1);
+        trainGroup.add(wheelGroup2);
+    }
 
     trainGroup.position.y = 0.8;
     train = trainGroup;
@@ -317,6 +343,7 @@ function createTrain() {
 
     for (let i = 0; i < 6; i++) {
         const carriageGroup = new THREE.Group();
+        const carriageWheelGroup = [];
         
         // Main carriage body
         const carriageBody = new THREE.Mesh(carriageGeometry, carriageMaterial);
@@ -332,22 +359,34 @@ function createTrain() {
         rightStripe.position.set(0, .9, -0.51); // Right side
         carriageGroup.add(rightStripe);
 
-        // Add wheels
-        frontWheelPositions.forEach(pos => {
-            const wheel = createWheel(0.3);
-            wheel.position.set(...pos);
-            carriageGroup.add(wheel);
-        });
+        // Add front wheels with paired axles
+        for (let j = 0; j < frontWheelPositions.length; j += 2) {
+            const wheelGroup1 = createWheel(0.3, false);  // Left wheel, no axle
+            const wheelGroup2 = createWheel(0.3, true);   // Right wheel with axle
+            wheelGroup1.position.set(...frontWheelPositions[j]);
+            wheelGroup2.position.set(...frontWheelPositions[j + 1]);
+            carriageGroup.add(wheelGroup1);
+            carriageGroup.add(wheelGroup2);
+            carriageWheelGroup.push(wheelGroup1.children[0]);
+            carriageWheelGroup.push(wheelGroup2.children[0]);
+        }
 
-        rearWheelPositions.forEach(pos => {
-            const wheel = createWheel(0.45);
-            wheel.position.set(...pos);
-            carriageGroup.add(wheel);
-        });
+        // Add rear wheels with paired axles
+        for (let j = 0; j < rearWheelPositions.length; j += 2) {
+            const wheelGroup1 = createWheel(0.45, false);  // Left wheel, no axle
+            const wheelGroup2 = createWheel(0.45, true);   // Right wheel with axle
+            wheelGroup1.position.set(...rearWheelPositions[j]);
+            wheelGroup2.position.set(...rearWheelPositions[j + 1]);
+            carriageGroup.add(wheelGroup1);
+            carriageGroup.add(wheelGroup2);
+            carriageWheelGroup.push(wheelGroup1.children[0]);
+            carriageWheelGroup.push(wheelGroup2.children[0]);
+        }
 
         carriageGroup.position.set(train.position.x - (i + 1) * 5, 0.8, 0);
         carriages.push(carriageGroup);
         scene.add(carriageGroup);
+        carriageWheels.push(carriageWheelGroup);
     }
 }
 
@@ -692,7 +731,15 @@ function updateIntroAnimation() {
     const progress = Math.min(elapsed / INTRO_DURATION, 1);
     
     // Use powered sine easing for more dramatic acceleration
-    const eased = Math.pow((1 - Math.cos(progress * Math.PI)) / 2, 1.5); // Added power of 1.5
+    const eased = Math.pow((1 - Math.cos(progress * Math.PI)) / 2, 1.5);
+    
+    // Show menu items when animation is 90% complete
+    if (progress >= 0.9 && !document.querySelector('.menu-item.visible')) {
+        const menuItems = document.querySelectorAll('.menu-item');
+        menuItems.forEach(item => {
+            item.classList.add('visible');
+        });
+    }
     
     // Start from a wide angle view
     const startRadius = 20;
@@ -713,16 +760,13 @@ function updateIntroAnimation() {
     
     if (progress >= 1) {
         introAnimationComplete = true;
-        // Store the final position and target
         finalIntroPosition.copy(camera.position);
         finalIntroTarget.copy(train.position);
         
-        // Calculate the camera angles based on final position
         const offset = finalIntroPosition.clone().sub(finalIntroTarget);
         cameraAngleHorizontal = Math.atan2(offset.z, offset.x);
         cameraAngleVertical = Math.asin(offset.y / offset.length());
         
-        // Adjust CAMERA_DISTANCE to match final intro radius
         CAMERA_DISTANCE = offset.length();
     }
 }
@@ -916,6 +960,24 @@ function updateSmoke() {
 function animate() {
     requestAnimationFrame(animate);
     
+    // Update wheel rotations
+    const deltaTime = 1/60; // Assuming 60fps
+    const rotationAmount = WHEEL_ROTATION_SPEED * deltaTime;
+    
+    // Rotate train wheels
+    trainWheels.forEach(wheel => {
+        wheel.children.forEach(child => {
+            child.rotateY(rotationAmount);
+        });
+    });
+    
+    // Rotate carriage wheels
+    carriageWheels.forEach(wheelGroup => {
+        wheelGroup.forEach(wheel => {
+            wheel.rotateY(rotationAmount);
+        });
+    });
+
     // Apply touch momentum when not being touched
     if (!isMouseDown && !isFirstPerson && introAnimationComplete) {
         if (Math.abs(touchVelocityX) > 0.001 || Math.abs(touchVelocityY) > 0.001) {
@@ -1039,6 +1101,12 @@ function skipIntroAnimation() {
         
         // Show the camera switch button
         document.getElementById('cameraSwitch').style.display = 'block';
+        
+        // Fade in menu items when animation is skipped
+        const menuItems = document.querySelectorAll('.menu-item');
+        menuItems.forEach(item => {
+            item.classList.add('visible');
+        });
     }
 }
 
