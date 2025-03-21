@@ -966,9 +966,7 @@ function animate() {
     
     // Rotate train wheels
     trainWheels.forEach(wheel => {
-        wheel.children.forEach(child => {
-            child.rotateY(rotationAmount);
-        });
+        wheel.rotateY(rotationAmount);
     });
     
     // Rotate carriage wheels
