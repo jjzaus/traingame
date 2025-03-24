@@ -30,7 +30,7 @@
         }
         .menu-bar {
             position: fixed;
-            top: 10%;
+            top: 1%;
             left: 5%;
             width: 100%;
             height: auto;
@@ -72,7 +72,7 @@
         
         .rules-text, .controls-text {
             position: fixed;
-            top: 75%;
+            top: 65%;
             left: 5%;
             color: white;
             font-family: 'Young Serif', serif;
@@ -103,16 +103,14 @@
 </head>
 <body>
     <div class="menu-bar">
+        <a class="menu-item" href="index.html"><h3>TRAIN RIDE</h3></a>
         <a class="menu-item" onclick="toggleRules()">Rules</a>
-        <a class="menu-item" onclick="toggleControls()">Controls</a>
-        <a class="menu-item" href="index.html">New Game</a>
+        <a class="menu-item" onclick="switchView()">Switch View</a>
     </div>
     <div class="rules-text">1. Help the train get to the end of the Station
-        <br>2. Use your horn to scare the deer off the track
-    </div>
-    <div class="controls-text">1. Use your mouse to look around the train
-        <br>2. Press C to switch to the Conductor's View
-        <br>3. Blow your horn with the spacebar
+        <br>2. [SPACEBAR] to blow your horn to scare the deer off the track
+        <br>3. [C] to switch to the Conductor's View
+        <br>4. Use your mouse to look around the train
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.0/dist/nipplejs.min.js"></script>
@@ -148,6 +146,15 @@
                 controlsText.classList.remove('visible');
             }
         });
+
+        // Simulate pressing 'C' key when Switch View is clicked
+        function switchView() {
+            const keyEvent = new KeyboardEvent('keydown', {
+                key: 'c',
+                code: 'KeyC'
+            });
+            document.dispatchEvent(keyEvent);
+        }
     </script>
 </body>
 </html> 
