@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Forest Train Ride</title>
     <link href="https://fonts.googleapis.com/css2?family=Young+Serif&display=swap" rel="stylesheet">
+    <audio id="trainSound" loop>
+        <source src="train.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="hornSound">
+        <source src="horn.mp3" type="audio/mpeg">
+    </audio>
     <style>
         body {
             margin: 0;
@@ -25,7 +31,7 @@
         .menu-bar {
             position: fixed;
             top: 10%;
-            left: 3%;
+            left: 5%;
             width: 100%;
             height: auto;
             background-color: transparent;
@@ -35,6 +41,7 @@
             align-items: flex-start;
             gap: 10px;
             z-index: 1000;
+            pointer-events: none;
         }
         .menu-item {
             color: white;
@@ -50,6 +57,7 @@
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
+            pointer-events: none;
         }
         .menu-item:hover {
             transform: scale(1.1);
@@ -65,7 +73,7 @@
         .rules-text, .controls-text {
             position: fixed;
             top: 75%;
-            left: 3%;
+            left: 5%;
             color: white;
             font-family: 'Young Serif', serif;
             font-size: 24px;
@@ -75,6 +83,7 @@
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
+            pointer-events: none;
         }
 
         .rules-text.visible, .controls-text.visible {
@@ -86,6 +95,9 @@
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
+            
+
+
         }
     </style>
 </head>

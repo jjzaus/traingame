@@ -1,7 +1,7 @@
 let scene, camera, renderer, train, track, carriages = [];
 let trees = [];
 const TRACK_SEGMENT_LENGTH = 2000; // Doubled from 1000 to 2000
-const TRAIN_SPEED = .1;
+const TRAIN_SPEED = .2;
 let trainPosition = 400; // Doubled from 200 to 400
 let cameraAngleHorizontal = 0;
 let cameraAngleVertical = 0;
@@ -34,9 +34,15 @@ const TREE_RENDER_DISTANCE = 500;  // How far ahead/behind to show trees
 let mountains = [];
 const NUM_MOUNTAINS = 50;
 let deer = [];
-const DEER_SPACING = 80 + Math.random() * 20; // Distance between deer
-const DEER_SPAWN_DISTANCE = 200; // How far ahead to spawn deer
-const DEER_DESPAWN_DISTANCE = -50; // How far behind to despawn deer
+const DEER_SPACING = 50 + Math.random() * 1.5; // Fixed spacing of 100 units
+const NUM_DEER = Math.floor(TRACK_SEGMENT_LENGTH / DEER_SPACING); // Number of deer based on track length
+let isWhistling = false;
+let hornSound;
+let whistleTimeout;
+const INITIAL_TRAIN_VOLUME = 0.06; // 20% of 0.3
+const FINAL_TRAIN_VOLUME = 0.3;
+let trainSound;
+const WHISTLE_DURATION = 1000; // 1 second in milliseconds
 
 
 // Initialize the scene
@@ -44,6 +50,17 @@ function init() {
     // Create scene
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB); // Light blue sky
+    
+    // Start train sound
+    trainSound = document.getElementById('trainSound');
+    trainSound.volume = INITIAL_TRAIN_VOLUME;
+    trainSound.play().catch(error => {
+        console.log("Audio play failed:", error);
+    });
+    
+    // Initialize horn sound
+    hornSound = document.getElementById('hornSound');
+    hornSound.volume = 0.4;
     
     // Add ground plane
     const groundGeometry = new THREE.PlaneGeometry(TRACK_SEGMENT_LENGTH * 40, TRACK_SEGMENT_LENGTH * 4); // Ground plane will automatically scale with new TRACK_SEGMENT_LENGTH
@@ -588,20 +605,68 @@ function createMountains() {
 }
 
 function createDeer() {
-    const deerGeometry = new THREE.BoxGeometry(1, 1, 0.5);
-    const deerMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 }); // Saddle brown
+    const deerMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
     
-    // Initial placement of deer with random offsets
-    const totalDeer = Math.ceil((DEER_SPAWN_DISTANCE - DEER_DESPAWN_DISTANCE) / DEER_SPACING);
-    
-    for (let i = 0; i < totalDeer; i++) {
-        const deerMesh = new THREE.Mesh(deerGeometry, deerMaterial);
-        // Store initial random offset for this deer
-        deerMesh.userData.sideOffset = (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 10);
-        deerMesh.userData.rotation = Math.random() * Math.PI * 2;
-        deerMesh.position.y = 0.5;
-        deer.push(deerMesh);
-        scene.add(deerMesh);
+    for (let i = 0; i < NUM_DEER; i++) {
+        const deerGroup = new THREE.Group();
+        
+        // Create body - 50% smaller
+        const bodyGeometry = new THREE.BoxGeometry(0.6, 0.3, 0.2);
+        const body = new THREE.Mesh(bodyGeometry, deerMaterial);
+        body.position.set(0, 0.55, 0);
+        deerGroup.add(body);
+        
+        // Create head - 50% smaller
+        const headGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.15);
+        const head = new THREE.Mesh(headGeometry, deerMaterial);
+        head.position.set(0.3, 0.7, 0); // Head slightly closer to body
+        deerGroup.add(head);
+        
+        // Create legs - 50% smaller
+        const legGeometry = new THREE.BoxGeometry(0.075, 0.4, 0.075);
+        const legPositions = [
+            [0.2, 0.2, 0.075],   // Front right leg
+            [0.2, 0.2, -0.075],  // Front left leg
+            [-0.2, 0.2, 0.075],  // Back right leg
+            [-0.2, 0.2, -0.075]  // Back left leg
+        ];
+        
+        legPositions.forEach(pos => {
+            const leg = new THREE.Mesh(legGeometry, deerMaterial);
+            leg.position.set(...pos);
+            deerGroup.add(leg);
+        });
+        
+        const x = i * DEER_SPACING;
+        const progress = x / TRACK_SEGMENT_LENGTH;
+        const curve = generateTrackCurve();
+        const trackPoint = curve.getPointAt(progress);
+        
+        const side = Math.random() > 0.5 ? 1 : -1;
+        const offset = Math.random() * 10;
+        
+        deerGroup.position.set(
+            trackPoint.x,
+            0,
+            trackPoint.z + (side * offset)
+        );
+        
+        
+        // Then apply random rotation
+        deerGroup.rotateY(Math.random() * Math.PI * 2);
+        
+        // Add movement properties to deer
+        deerGroup.userData.originalX = trackPoint.x;
+        deerGroup.userData.originalZ = trackPoint.z + (side * offset);
+        deerGroup.userData.movementSpeed = 0.01 + Math.random() * 0.02;
+        deerGroup.userData.normalSpeed = 0.01 + Math.random() * 0.02;
+        deerGroup.userData.movementRange = 30;
+        deerGroup.userData.movementDirection = 1;
+        deerGroup.userData.side = side;
+        deerGroup.userData.isFleeing = false;
+        
+        deer.push(deerGroup);
+        scene.add(deerGroup);
     }
 }
 
@@ -877,14 +942,14 @@ function updateSmoke() {
     const positions = smokeParticles.positions;
     const velocities = smokeParticles.velocities;
     const opacities = smokeParticles.opacities;
-    const sizes = smokeParticles.sizes;      // Get sizes array
+    const sizes = smokeParticles.sizes;
     const stackLocalPos = new THREE.Vector3(1.5, 1.37, 0);
 
     for (let i = 0; i < NUM_PARTICLES; i++) {
         // Update positions with halved velocities
-        positions[i * 3] += velocities[i * 3] * 0.5;         // X movement (50% slower)
-        positions[i * 3 + 1] += velocities[i * 3 + 1] * 0.5; // Y movement (50% slower)
-        positions[i * 3 + 2] += velocities[i * 3 + 2] * 0.5; // Z movement (50% slower)
+        positions[i * 3] += velocities[i * 3] * 0.5;         // X movement
+        positions[i * 3 + 1] += velocities[i * 3 + 1] * (isWhistling ? 3 : 1); // Y movement (3x when whistling)
+        positions[i * 3 + 2] += velocities[i * 3 + 2] * 0.5; // Z movement
 
         // Add more turbulence for wider spread
         positions[i * 3 + 2] += (Math.random() - 0.5) * 0.01;  // Doubled Z variation
@@ -1026,6 +1091,14 @@ function animate() {
     // Update deer positions
     updateDeer();
     
+    // Update train sound volume during intro
+    if (!introAnimationComplete) {
+        const elapsed = Date.now() - introStartTime;
+        const progress = Math.min(elapsed / INTRO_DURATION, 1);
+        trainSound.volume = INITIAL_TRAIN_VOLUME + 
+            (FINAL_TRAIN_VOLUME - INITIAL_TRAIN_VOLUME) * progress;
+    }
+    
     renderer.render(scene, camera);
 }
 
@@ -1062,6 +1135,9 @@ function skipIntroAnimation() {
     if (!introAnimationComplete) {
         introAnimationComplete = true;
         
+        // Set train sound to full volume immediately
+        trainSound.volume = FINAL_TRAIN_VOLUME;
+        
         // Set camera to final position
         camera.position.set(
             train.position.x + Math.cos(Math.PI * 1.75) * 4.5,
@@ -1095,6 +1171,20 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'c' || e.key === 'C') {
         isInCockpit = !isInCockpit;
     }
+    if (e.code === 'Space' && !isWhistling) {
+        isWhistling = true;
+        // Play horn sound
+        hornSound.currentTime = 0;
+        hornSound.play().catch(error => {
+            console.log("Horn play failed:", error);
+        });
+        
+        // Set timeout to stop whistle after 1 second
+        whistleTimeout = setTimeout(() => {
+            isWhistling = false;
+            hornSound.pause();
+        }, WHISTLE_DURATION);
+    }
 });
 
 // Initialize and start animation
@@ -1122,4 +1212,56 @@ function updateTrees() {}
 function updateMountains() {}
 
 // Empty function since we don't want to update deer anymore
-function updateDeer() {} c
+function updateDeer() {
+    deer.forEach(deerGroup => {
+        // Check if whistle is blown and deer is within range
+        if (isWhistling && !deerGroup.userData.isFleeing) {
+            // Calculate distance to train
+            const distanceToTrain = Math.sqrt(
+                Math.pow(deerGroup.position.x - train.position.x, 2) +
+                Math.pow(deerGroup.position.z - train.position.z, 2)
+            );
+            
+            // Only flee if within 50 units of train
+            if (distanceToTrain <= 30) {
+                // Start fleeing when whistle blows
+                deerGroup.userData.isFleeing = true;
+                // Point away from track (accounting for initial 90-degree rotation)
+                deerGroup.rotation.y = deerGroup.userData.side > 0 ? Math.PI : 0;
+            }
+        }
+        
+        if (deerGroup.userData.isFleeing) {
+            // Move away from track quickly
+            const fleeSpeed = 0.1;
+            const direction = deerGroup.userData.side > 0 ? 1 : -1;
+            
+            // Set rotation to face opposite of fleeing direction
+            // If fleeing positive Z (direction = 1), face negative Z (-Math.PI/2)
+            // If fleeing negative Z (direction = -1), face positive Z (Math.PI/2)
+            deerGroup.rotation.y = -direction * Math.PI/2;
+            
+            // Calculate distance fled so far
+            const distanceFled = Math.abs(deerGroup.position.z - deerGroup.userData.originalZ);
+            
+            if (distanceFled < deerGroup.userData.movementRange) {
+                // Keep fleeing until reaching maximum range
+                deerGroup.position.z += direction * fleeSpeed;
+            }
+        } else {
+            // Normal idle movement when not fleeing
+            const idleSpeed = deerGroup.userData.normalSpeed;
+            // Move in the direction the deer is facing
+            deerGroup.position.x += Math.cos(deerGroup.rotation.y) * idleSpeed;
+            deerGroup.position.z += Math.sin(deerGroup.rotation.y) * idleSpeed;
+            
+            // Keep within small range of original position when not fleeing
+            const idleRange = 2;
+            if (Math.abs(deerGroup.position.x - deerGroup.userData.originalX) > idleRange ||
+                Math.abs(deerGroup.position.z - deerGroup.userData.originalZ) > idleRange) {
+                // Turn around
+                deerGroup.rotation.y += Math.PI;
+            }
+        }
+    });
+}
