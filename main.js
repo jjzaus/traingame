@@ -37,11 +37,6 @@ let deer = [];
 const DEER_SPACING = 80 + Math.random() * 20; // Distance between deer
 const DEER_SPAWN_DISTANCE = 200; // How far ahead to spawn deer
 const DEER_DESPAWN_DISTANCE = -50; // How far behind to despawn deer
-let startPortalBox;
-let exitPortalBox;
-const SPAWN_POINT_X = 0;
-const SPAWN_POINT_Y = 0;
-const SPAWN_POINT_Z = 0;
 
 
 // Initialize the scene
@@ -85,12 +80,6 @@ function init() {
     // Add mountains after creating forest
     createMountains();
     createDeer();
-
-    // Create portals
-    if (new URLSearchParams(window.location.search).get('portal')) {
-        createStartPortal();
-    }
-    createExitPortal();
 
     // Initialize animation timestamp
     introStartTime = Date.now();
@@ -1037,33 +1026,6 @@ function animate() {
     // Update deer positions
     updateDeer();
     
-    // Check portal collisions
-    if (new URLSearchParams(window.location.search).get('portal')) {
-        const trainBox = new THREE.Box3().setFromObject(train);
-        if (startPortalBox && trainBox.intersectsBox(startPortalBox)) {
-            const urlParams = new URLSearchParams(window.location.search);
-            const refUrl = urlParams.get('ref');
-            if (refUrl) {
-                let url = refUrl;
-                if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                    url = 'https://' + url;
-                }
-                window.location.href = url;
-            }
-        }
-    }
-    
-    if (exitPortalBox) {
-        const trainBox = new THREE.Box3().setFromObject(train);
-        if (trainBox.intersectsBox(exitPortalBox)) {
-            const currentParams = new URLSearchParams(window.location.search);
-            const newParams = new URLSearchParams();
-            newParams.append('portal', true);
-            const paramString = newParams.toString();
-            window.location.href = 'https://portal.pieter.com' + (paramString ? '?' + paramString : '');
-        }
-    }
-
     renderer.render(scene, camera);
 }
 
@@ -1160,43 +1122,4 @@ function updateTrees() {}
 function updateMountains() {}
 
 // Empty function since we don't want to update deer anymore
-function updateDeer() {}
-
-function createStartPortal() {
-    // Create portal group to contain all portal elements
-    const startPortalGroup = new THREE.Group();
-    startPortalGroup.position.set(trainPosition + 50, 10, 0); // Position ahead of train
-    startPortalGroup.rotation.x = 0.35;
-    
-    // Create portal effect
-    const startPortalGeometry = new THREE.TorusGeometry(15, 2, 16, 100);
-    const startPortalMaterial = new THREE.MeshPhongMaterial({
-        color: 0xff0000,
-        emissive: 0xff0000,
-        transparent: true,
-        opacity: 0.8
-    });
-    // ... rest of start portal creation code ...
-    
-    scene.add(startPortalGroup);
-    startPortalBox = new THREE.Box3().setFromObject(startPortalGroup);
-}
-
-function createExitPortal() {
-    const exitPortalGroup = new THREE.Group();
-    exitPortalGroup.position.set(trainPosition + TRACK_SEGMENT_LENGTH - 100, 10, 0); // Position near end of track
-    exitPortalGroup.rotation.x = 0.35;
-    
-    // Create portal effect
-    const exitPortalGeometry = new THREE.TorusGeometry(15, 2, 16, 100);
-    const exitPortalMaterial = new THREE.MeshPhongMaterial({
-        color: 0x00ff00,
-        emissive: 0x00ff00,
-        transparent: true,
-        opacity: 0.8
-    });
-    // ... rest of exit portal creation code ...
-    
-    scene.add(exitPortalGroup);
-    exitPortalBox = new THREE.Box3().setFromObject(exitPortalGroup);
-} c
+function updateDeer() {} c
