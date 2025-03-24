@@ -9,6 +9,10 @@
         body {
             margin: 0;
             overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
         }
         canvas {
             width: 100%;
@@ -18,59 +22,34 @@
         canvas:active {
             cursor: grabbing;
         }
-        #cameraSwitch {
-            position: fixed;
-            bottom: 50px;
-            left: 170px;
-            padding: 10px 20px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        #cameraSwitch:hover {
-            background-color: rgba(255, 255, 255, 1);
-        }
-        .window-buttons {
-            position: fixed;
-            bottom: 50px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 20px;
-        }
-        .window-buttons button {
-            padding: 10px 20px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        .window-buttons button:hover {
-            background-color: rgba(255, 255, 255, 1);
-        }
         .menu-bar {
             position: fixed;
-            top: 5%;
-            left: 0;
+            top: 10%;
+            left: 3%;
             width: 100%;
-            height: 50px;
+            height: auto;
             background-color: transparent;
             display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 40px;
+            flex-direction: column;
+            justify-content: left;
+            align-items: flex-start;
+            gap: 10px;
             z-index: 1000;
         }
         .menu-item {
             color: white;
             font-family: 'Young Serif', serif;
-            font-size: 48px;
+            font-size: 40px;
             text-decoration: none;
-            padding: 20px 30px;
-            cursor: pointer;
-            transition: all 0.3s ease;
+            padding: 0px 0px;
+            cursor: default;
+            pointer-events: none;
+            transition: all 0.2s ease;
             opacity: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
         }
         .menu-item:hover {
             transform: scale(1.1);
@@ -78,24 +57,85 @@
         }
         .menu-item.visible {
             opacity: 1;
-            transition: opacity 2s ease;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: opacity 3.5s ease;
+        }
+        
+        .rules-text, .controls-text {
+            position: fixed;
+            top: 75%;
+            left: 3%;
+            color: white;
+            font-family: 'Young Serif', serif;
+            font-size: 24px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+
+        .rules-text.visible, .controls-text.visible {
+            opacity: 1;
+        }
+
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
         }
     </style>
 </head>
 <body>
     <div class="menu-bar">
-        <a class="menu-item">Game</a>
-        <a class="menu-item">Shop</a>
-        <a class="menu-item">Account</a>
-        <a class="menu-item">About</a>
+        <a class="menu-item" onclick="toggleRules()">Rules</a>
+        <a class="menu-item" onclick="toggleControls()">Controls</a>
+        <a class="menu-item" href="index.html">New Game</a>
     </div>
-    <button id="cameraSwitch">Switch View</button>
-    <div class="window-buttons">
-        <button id="leftWindow">Left Window</button>
-        <button id="rightWindow">Right Window</button>
+    <div class="rules-text">1. Help the train get to the end of the Station
+        <br>2. Use your horn to scare the deer off the track
+    </div>
+    <div class="controls-text">1. Use your mouse to look around the train
+        <br>2. Press C to switch to the Conductor's View
+        <br>3. Blow your horn with the spacebar
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.0/dist/nipplejs.min.js"></script>
     <script src="main.js"></script>
+    <script>
+        function toggleRules() {
+            const rulesText = document.querySelector('.rules-text');
+            const controlsText = document.querySelector('.controls-text');
+            rulesText.classList.toggle('visible');
+            controlsText.classList.remove('visible'); // Hide controls if showing
+        }
+
+        function toggleControls() {
+            const controlsText = document.querySelector('.controls-text');
+            const rulesText = document.querySelector('.rules-text');
+            controlsText.classList.toggle('visible');
+            rulesText.classList.remove('visible'); // Hide rules if showing
+        }
+
+        // Add click event listener to the document
+        document.addEventListener('click', function(event) {
+            const rulesText = document.querySelector('.rules-text');
+            const controlsText = document.querySelector('.controls-text');
+            const rulesButton = document.querySelector('.menu-item');
+            const controlsButton = document.querySelectorAll('.menu-item')[1];
+            
+            // Only hide if click is not on the text or buttons
+            if (!rulesText.contains(event.target) && 
+                !controlsText.contains(event.target) && 
+                !rulesButton.contains(event.target) && 
+                !controlsButton.contains(event.target)) {
+                rulesText.classList.remove('visible');
+                controlsText.classList.remove('visible');
+            }
+        });
+    </script>
 </body>
 </html> 
