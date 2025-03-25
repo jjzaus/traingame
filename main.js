@@ -32,7 +32,7 @@ let isInCockpit = false;
 const COCKPIT_OFFSET = new THREE.Vector3(-.8, .8, -.99); // Position in middle of cockpit
 const TREE_RENDER_DISTANCE = 500;  // How far ahead/behind to show trees
 let mountains = [];
-const NUM_MOUNTAINS = 50;
+const NUM_MOUNTAINS = 30;
 let deer = [];
 const DEER_SPACING = 50 + Math.random() * 1.5; // Fixed spacing of 100 units
 const NUM_DEER = Math.floor(TRACK_SEGMENT_LENGTH / DEER_SPACING); // Number of deer based on track length
@@ -43,13 +43,31 @@ const INITIAL_TRAIN_VOLUME = 0.06; // 20% of 0.3
 const FINAL_TRAIN_VOLUME = 0.3;
 let trainSound;
 const WHISTLE_DURATION = 1000; // 1 second in milliseconds
+let ambientSound;
+let hasStarted = false; // Add flag to track if experience has started
+let gameEnded = false;
+let fallenTree = null; // Reference to store fallen tree object
 
 
 // Initialize the scene
 function init() {
     // Create scene
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB); // Light blue sky
+    scene.background = new THREE.Color(0x2a3b4d); // Darker blue-gray sky
+    
+    // Add fog with darker color - modified to start further back
+    const fogColor = 0x1a1a1a; // Matching dark grey
+    const fogNear = 0;  // Start at train position
+    const fogFar = 20;  // Extend far behind train
+    scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+    
+    // Add the sun
+    createSun();
+    
+    // Initialize ambient sound but don't play yet
+    ambientSound = document.getElementById('ambientSound');
+    ambientSound.volume = 0.1;
+    ambientSound.loop = true;
     
     // Start train sound
     trainSound = document.getElementById('trainSound');
@@ -63,24 +81,36 @@ function init() {
     hornSound.volume = 0.4;
     
     // Add ground plane
-    const groundGeometry = new THREE.PlaneGeometry(TRACK_SEGMENT_LENGTH * 40, TRACK_SEGMENT_LENGTH * 4); // Ground plane will automatically scale with new TRACK_SEGMENT_LENGTH
-    const groundMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0x3f7f3f,  // Forest green
-        side: THREE.DoubleSide 
+    const groundGeometry = new THREE.PlaneGeometry(TRACK_SEGMENT_LENGTH * 40, TRACK_SEGMENT_LENGTH * 4);
+    const groundMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x2d4a1d,
+        side: THREE.DoubleSide,
+        metalness: 0,
+        roughness: 1
     });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0;
     scene.add(ground);
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);  // Increased far plane
     renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
     // Add lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, .4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, .01);
     scene.add(ambientLight);
+    
+    // Add hemisphere light for sky gradient
+    const hemisphereLight = new THREE.HemisphereLight(
+        0x8B0000,  // Sky color (matching sun)
+        0x000000,  // Ground color (black)
+        0.3        // Intensity
+    );
+    hemisphereLight.position.set(TRACK_SEGMENT_LENGTH / 2, 200, 500); // Match sun position
+    scene.add(hemisphereLight);
+    
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(0, 10, 0);
     scene.add(directionalLight);
@@ -96,16 +126,20 @@ function init() {
 
     // Add mountains after creating forest
     createMountains();
-    createDeer();
+    
+    // Add fallen tree obstacle
+    createFallenTree();
+    
+    // Don't create deer yet - will be created on first click
 
     // Initialize animation timestamp
     introStartTime = Date.now();
     
     // Start with camera far out
-    camera.position.set(300, 20, 100); // Adjusted x position to match train start
+    camera.position.set(300, 20, 100);
     camera.lookAt(train.position);
 
-    // Initialize mouse controls
+    // Initialize mouse controls with start functionality
     initMouseControls();
     createSmokeParticles();
 }
@@ -115,7 +149,11 @@ function createWheel(radius, isRightSide) {
 
     // Create the wheel
     const wheelGeometry = new THREE.CylinderGeometry(radius, radius, 0.1, 16);
-    const wheelMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+    const wheelMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x1a1a1a, // Very dark gray
+        metalness: 0,
+        roughness: 1
+    });
     const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
     wheel.rotateX(Math.PI / 2);
     wheelGroup.add(wheel);
@@ -123,7 +161,11 @@ function createWheel(radius, isRightSide) {
     // Create the axle only for right-side wheels
     if (isRightSide) {
         const axleGeometry = new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, 0.9, 8);
-        const axleMaterial = new THREE.MeshPhongMaterial({ color: 0x1a1a1a });
+        const axleMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x1a1a1a,
+            metalness: 0,
+            roughness: 1
+        });
         const axle = new THREE.Mesh(axleGeometry, axleMaterial);
         axle.rotateX(Math.PI / 2);
         axle.position.set(0, 0, .4);
@@ -139,14 +181,39 @@ function createTrain() {
     
     // Main body - adjust y from 0.38 to 0.50
     const bodyGeometry = new THREE.CylinderGeometry(.5, .5, 2.5, 16);
-    const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x3d3d3d, // Darker gray
+        metalness: 0,
+        roughness: 1
+    });
     const trainBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
     trainBody.position.set(.6, .50, 0); // Changed from 0.38 to 0.50
     trainBody.rotateZ(Math.PI / 2);
     trainGroup.add(trainBody);
 
+    // Add three decorative cylinders along the main body
+    const ringGeometry = new THREE.CylinderGeometry(0.525, 0.525, 0.1, 16); // Radius is 1.05 * main body radius
+    const ringMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x4d4d4d, // Slightly lighter than body
+        metalness: 0,
+        roughness: 1
+    });
+
+    // Create and position three rings along the body
+    const ringPositions = [-0.7, 0, 0.7]; // Evenly spaced along the 2.5 length
+    ringPositions.forEach(xOffset => {
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.position.set(.6 + xOffset, .50, 0); // Match body position but offset along length
+        ring.rotateZ(Math.PI / 2); // Match body rotation
+        trainGroup.add(ring);
+    });
+
     // Add smokestack (two parts)
-    const stackBaseMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const stackBaseMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x2d2d2d, // Even darker gray
+        metalness: 0,
+        roughness: 1
+    });
     
     // Skinny base cylinder
     const stackBaseGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.3, 16);
@@ -162,7 +229,7 @@ function createTrain() {
 
     // Add step ladders at the rear of the cockpit
     const stepLadderGeometry = new THREE.BoxGeometry(0.4, 0.05, 0.15);
-    const stepLadderMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 }); // Dark gray like wheels
+    const stepLadderMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 }); // Dark gray like wheels
 
     // Left ladder
     const leftLadderGroup = new THREE.Group();
@@ -210,7 +277,7 @@ function createTrain() {
 
     // Add train cockpit
     const cockpitGeometry = new THREE.BoxGeometry(1.2, 1.2, 1.5, 16);
-    const cockpitMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const cockpitMaterial = new THREE.MeshStandardMaterial({ color: 0x686868 });
     const trainCockpit = new THREE.Mesh(cockpitGeometry, cockpitMaterial);
     trainCockpit.rotateY(Math.PI / 2);
     trainCockpit.position.set(-1.25, 0.75, 0);
@@ -218,7 +285,7 @@ function createTrain() {
 
     // Add rear door to cockpit
     const doorGeometry = new THREE.PlaneGeometry(0.5, 0.8);
-    const doorMaterial = new THREE.MeshPhongMaterial({ 
+    const doorMaterial = new THREE.MeshStandardMaterial({ 
         color: 0x111111,  // Very dark grey/black
         side: THREE.DoubleSide
     });
@@ -228,11 +295,14 @@ function createTrain() {
     trainGroup.add(door);
 
     // Add windows to cockpit
-    const windowMaterial = new THREE.MeshPhongMaterial({
-        color: 0x88CCFF,
+    const windowMaterial = new THREE.MeshStandardMaterial({
+        color: 0x557788, // Muted blue-gray
         transparent: true,
-        opacity: 0.6,
-        shininess: 100
+        opacity: 0.4,
+        metalness: 0,
+        roughness: 0.5,
+        emissive: 0x557788, // Match base color
+        emissiveIntensity: 10
     });
 
     // Front window
@@ -257,7 +327,7 @@ function createTrain() {
 
     // Add train frame
     const frameGeometry = new THREE.BoxGeometry(1, .2, 2, 16);
-    const frameMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x686868 });
     const trainFrame = new THREE.Mesh(frameGeometry, frameMaterial);
     trainFrame.rotateY(Math.PI / 2);
     trainFrame.position.set(1, -.1, 0);
@@ -265,7 +335,7 @@ function createTrain() {
 
     // Add train underframe
     const underframeGeometry = new THREE.BoxGeometry(.7, .5, 3.7, 16);
-    const underframeMaterial = new THREE.MeshPhongMaterial({ color: 0x686868 });
+    const underframeMaterial = new THREE.MeshStandardMaterial({ color: 0x686868 });
     const trainUnderframe = new THREE.Mesh(underframeGeometry, underframeMaterial);
     trainUnderframe.rotateY(Math.PI / 2);
     trainUnderframe.position.set(0, -.1, 0);
@@ -273,11 +343,27 @@ function createTrain() {
 
     // Add headlight - adjust y from 0.38 to 0.50
     const headlightGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.12, 16);
-    const headlightMaterial = new THREE.MeshPhongMaterial({ color: 0xFFFFCC});
+    const headlightMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xFFFFCC,
+        emissive: 0xFFFFCC,
+        emissiveIntensity: 1
+    });
     const headlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
     headlight.rotation.z = Math.PI / 2;
-    headlight.position.set(1.83, 0.50, 0); // Changed from 0.38 to 0.50
+    headlight.position.set(1.83, 0.50, 0);
+    
+    // Add spotlight for headlight beam
+    const headlightBeam = new THREE.SpotLight(0xFFFFCC, 5);
+    headlightBeam.position.copy(headlight.position);
+    headlightBeam.angle = Math.PI / 10; // 22.5 degree cone
+    headlightBeam.penumbra = 0.4;
+    headlightBeam.decay = .5;
+    headlightBeam.distance = 50;
+    headlightBeam.target.position.set(headlight.position.x + 1, headlight.position.y, headlight.position.z);
+    
     trainGroup.add(headlight);
+    trainGroup.add(headlightBeam);
+    trainGroup.add(headlightBeam.target);
 
     // Add snow plow / shovel
     const shovelGeometry = new THREE.BufferGeometry();
@@ -301,7 +387,7 @@ function createTrain() {
     shovelGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     shovelGeometry.computeVertexNormals();
     
-    const shovelMaterial = new THREE.MeshPhongMaterial({ 
+    const shovelMaterial = new THREE.MeshStandardMaterial({ 
         color: 0x8B8B8B,   // Slightly lighter than train body
         side: THREE.DoubleSide
     });
@@ -313,17 +399,17 @@ function createTrain() {
 
     // Add wheels using different sizes for front and rear
     const frontWheelPositions = [
-        [1, -0.47, 0.4],
-        [1, -0.47, -0.4],
-        [1.7, -0.47, 0.4],
-        [1.7, -0.47, -0.4]
+        [1, -0.37, 0.4],
+        [1, -0.37, -0.4],
+        [1.7, -0.37, 0.4],
+        [1.7, -0.37, -0.4]
     ];
 
     const rearWheelPositions = [
-        [-.5, -0.32, 0.4],
-        [-.5, -0.32, -0.4],
-        [-1.4, -0.32, 0.4],
-        [-1.4, -0.32, -0.4]
+        [-.5, -0.22, 0.4],
+        [-.5, -0.22, -0.4],
+        [-1.4, -0.22, 0.4],
+        [-1.4, -0.22, -0.4]
     ];
 
     // Add front wheels with paired axles
@@ -352,11 +438,15 @@ function createTrain() {
 
     // Create carriages
     const carriageGeometry = new THREE.BoxGeometry(5, 1.5, 1);
-    const carriageMaterial = new THREE.MeshPhongMaterial({ color: 0x1a472a }); // Dark green
+    const carriageMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x1d3326, // Dark forest green
+        metalness: 0,
+        roughness: 1
+    });
     
     // Create white stripe geometry
     const stripeGeometry = new THREE.BoxGeometry(5, 0.1, 0.02);
-    const stripeMaterial = new THREE.MeshPhongMaterial({ color: 0xFFFFFF });
+    const stripeMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
 
     for (let i = 0; i < 4; i++) {
         const carriageGroup = new THREE.Group();
@@ -371,6 +461,7 @@ function createTrain() {
         const leftStripe = new THREE.Mesh(stripeGeometry, stripeMaterial);
         leftStripe.position.set(0, 0.9, 0.51); // Left side
         carriageGroup.add(leftStripe);
+        
 
         const rightStripe = new THREE.Mesh(stripeGeometry, stripeMaterial);
         rightStripe.position.set(0, .9, -0.51); // Right side
@@ -412,7 +503,7 @@ function createTrack() {
     
     // Create two parallel tracks
     const railGeometry = new THREE.TubeGeometry(curve, 50, 0.05, 6, false); // Reduced radius to 0.1
-    const railMaterial = new THREE.MeshPhongMaterial({ color: 0x666666 });
+    const railMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
     
     // Create first rail
     const rail1 = new THREE.Mesh(railGeometry, railMaterial);
@@ -435,7 +526,7 @@ function createTrack() {
     
     // Add railroad ties
     const tieGeometry = new THREE.BoxGeometry(0.2, 0.05, 1.4);
-    const tieMaterial = new THREE.MeshPhongMaterial({ color: 0x4d3319 }); // Brown color for wooden ties
+    const tieMaterial = new THREE.MeshStandardMaterial({ color: 0x4d3319 }); // Brown color for wooden ties
     
     // Add ties along the track
     const numTies = 2000;
@@ -472,20 +563,25 @@ function createForest() {
         false   // open ended
     );
     
-    const sharedTrunkMaterial = new THREE.MeshPhongMaterial({ 
-        color: 0x4d3319,  // Brown color for trunk
-        flatShading: false
+    const sharedTrunkMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x2b1810, // Dark brown
+        metalness: 0,
+        roughness: 1
     });
 
     trees = [];
-    for (let i = 0; i < 4000; i++) {
+    for (let i = 0; i < 3000; i++) {
         const treeGroup = new THREE.Group();
         
         // Create cone (tree top)
         const coneHeight = 1 ; // Random height between 5 and 9
         const coneRadius = .4;
-        const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 5);
-        const coneMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+        const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 8);
+        const coneMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x1d3b1d, // Dark pine green
+            metalness: 0,
+            roughness: 1
+        });
         const cone = new THREE.Mesh(coneGeometry, coneMaterial);
         cone.position.y = -.5;
         treeGroup.add(cone);
@@ -494,8 +590,10 @@ function createForest() {
         const trunkRadius = coneRadius/6;
         const trunkHeight = .5;
         const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
-        const trunkMaterial = new THREE.MeshPhongMaterial({ 
-            color: 0x4d3319
+        const trunkMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x2b1810, // Dark brown
+            metalness: 0,
+            roughness: 1
         });
         const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
         trunk.position.y = -1;
@@ -518,14 +616,18 @@ function createForest() {
     }
 
     // Second set of taller trees
-    for (let i = 0; i < 4000; i++) {
+    for (let i = 0; i < 2000; i++) {
         const treeGroup = new THREE.Group();
         
         // Create cone (tree top)
         const coneHeight = 5; // Random height between 5 and 9
         const coneRadius = 1.2;
-        const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 6);
-        const coneMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+        const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 8);
+        const coneMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x1d3b1d, // Dark pine green
+            metalness: 0,
+            roughness: 1
+        });
         const cone = new THREE.Mesh(coneGeometry, coneMaterial);
         cone.position.y = 1;
         treeGroup.add(cone);
@@ -534,8 +636,56 @@ function createForest() {
         const trunkRadius = coneRadius/3;
         const trunkHeight = 2;
         const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 5);
-        const trunkMaterial = new THREE.MeshPhongMaterial({ 
-            color: 0x4d3319
+        const trunkMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x2b1810, // Dark brown
+            metalness: 0,
+            roughness: 1
+        });
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.y = -.8;
+        treeGroup.add(trunk);
+        
+        // Position relative to track
+        const x = Math.random() * TRACK_SEGMENT_LENGTH;
+        const progress = x / TRACK_SEGMENT_LENGTH;
+        const trackPoint = generateTrackCurve().getPointAt(progress);
+        
+        const side = Math.random() > 0.5 ? 1 : -1;
+        const minDistance = 9;
+        const randomExtra = Math.random() * 100;
+        const z = trackPoint.z + (minDistance + randomExtra) * side;
+        
+        treeGroup.position.set(x, 2, z);
+
+        trees.push(treeGroup);
+        scene.add(treeGroup);
+    }
+
+    // Third set of taller trees
+    for (let i = 0; i < 2000; i++) {
+        const treeGroup = new THREE.Group();
+        
+        // Create cone (tree top)
+        const coneHeight = 3; // Random height between 5 and 9
+        const coneRadius = 1;
+        const coneGeometry = new THREE.ConeGeometry(coneRadius, coneHeight, 8);
+        const coneMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x1d3b1d, // Dark pine green
+            metalness: 0,
+            roughness: 1
+        });
+        const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+        cone.position.y = 1;
+        treeGroup.add(cone);
+        
+        // Create trunk with bark texture
+        const trunkRadius = coneRadius/3;
+        const trunkHeight = 2;
+        const trunkGeometry = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 5);
+        const trunkMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x2b1810, // Dark brown
+            metalness: 0,
+            roughness: 1
         });
         const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
         trunk.position.y = -.8;
@@ -559,14 +709,18 @@ function createForest() {
 }
 
 function createMountains() {
-    const mountainGeometry = new THREE.ConeGeometry(100, 80, 5);
-    const mountainMaterial = new THREE.MeshPhongMaterial({ color: 0x3f7f3f });  // Changed to forest green
+    const mountainGeometry = new THREE.ConeGeometry(200, 70, 6);
+    const mountainMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x3d2213, // Dark mountain green
+        metalness: 0,
+        roughness: 1
+    });
 
     // Create initial set of large mountains
     for (let i = 0; i < NUM_MOUNTAINS; i++) {
         const x = Math.random() * TRACK_SEGMENT_LENGTH;
         const side = Math.random() > 0.5 ? 1 : -1;
-        const z = side * (150 + Math.random() * 50);
+        const z = side * (450 + Math.random() * 150);
         
         const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
         mountain.position.set(x, 0, z);
@@ -575,7 +729,7 @@ function createMountains() {
         mountain.rotation.y = Math.random() * Math.PI * 2;
         
         // Random scale variation for large mountains
-        const scale = 0.75 + Math.random() * 0.5;
+        const scale = 1.5 + Math.random() * 1;
         mountain.scale.set(scale, scale, scale);
         
         scene.add(mountain);
@@ -585,10 +739,10 @@ function createMountains() {
     // Create set of smaller mountains
     for (let i = 0; i < NUM_MOUNTAINS; i++) {
         const x = Math.random() * TRACK_SEGMENT_LENGTH;
+        const y = Math.random() * TRACK_SEGMENT_LENGTH;
         const side = Math.random() > 0.5 ? 1 : -1;
         // Position closer to the track
-        const z = side * (100 + Math.random() * 250);
-        
+        const z = side * (100 + Math.random() * 50);
         const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
         mountain.position.set(x, 0, z);
         
@@ -596,7 +750,7 @@ function createMountains() {
         mountain.rotation.y = Math.random() * Math.PI * 2;
         
         // Smaller scale variation for small mountains
-        const scale = 0.3 + Math.random() * 0.2;
+        const scale = 0.1 + Math.random() * 0.2;
         mountain.scale.set(scale, scale, scale);
         
         scene.add(mountain);
@@ -605,21 +759,30 @@ function createMountains() {
 }
 
 function createDeer() {
-    const deerMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+    const deerMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x3d2213, // Dark brown
+        transparent: true,
+        opacity: 0,
+        metalness: 0,
+        roughness: 1
+    });
+    
+    const startTime = Date.now();
+    const FADE_DURATION = 2000; // 2 seconds in milliseconds
     
     for (let i = 0; i < NUM_DEER; i++) {
         const deerGroup = new THREE.Group();
         
         // Create body - 50% smaller
         const bodyGeometry = new THREE.BoxGeometry(0.6, 0.3, 0.2);
-        const body = new THREE.Mesh(bodyGeometry, deerMaterial);
+        const body = new THREE.Mesh(bodyGeometry, deerMaterial.clone());
         body.position.set(0, 0.55, 0);
         deerGroup.add(body);
         
         // Create head - 50% smaller
         const headGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.15);
-        const head = new THREE.Mesh(headGeometry, deerMaterial);
-        head.position.set(0.3, 0.7, 0); // Head slightly closer to body
+        const head = new THREE.Mesh(headGeometry, deerMaterial.clone());
+        head.position.set(0.3, 0.7, 0);
         deerGroup.add(head);
         
         // Create legs - 50% smaller
@@ -632,7 +795,7 @@ function createDeer() {
         ];
         
         legPositions.forEach(pos => {
-            const leg = new THREE.Mesh(legGeometry, deerMaterial);
+            const leg = new THREE.Mesh(legGeometry, deerMaterial.clone());
             leg.position.set(...pos);
             deerGroup.add(leg);
         });
@@ -651,8 +814,6 @@ function createDeer() {
             trackPoint.z + (side * offset)
         );
         
-        
-        // Then apply random rotation
         deerGroup.rotateY(Math.random() * Math.PI * 2);
         
         // Add movement properties to deer
@@ -664,6 +825,8 @@ function createDeer() {
         deerGroup.userData.movementDirection = 1;
         deerGroup.userData.side = side;
         deerGroup.userData.isFleeing = false;
+        deerGroup.userData.startTime = startTime;
+        deerGroup.userData.fadeDuration = FADE_DURATION;
         
         deer.push(deerGroup);
         scene.add(deerGroup);
@@ -673,7 +836,20 @@ function createDeer() {
 function initMouseControls() {
     const canvas = renderer.domElement;
     
+    function startExperience() {
+        if (!hasStarted) {
+            hasStarted = true;
+            createDeer(); // Create deer when experience starts
+            // Start ambient sound
+            ambientSound.play().catch(error => {
+                console.log("Ambient sound play failed:", error);
+            });
+        }
+    }
+    
     canvas.addEventListener('mousedown', (e) => {
+        startExperience(); // Start experience on first click
+        
         if (isInCockpit) return;
         if (!introAnimationComplete) {
             skipIntroAnimation();
@@ -686,6 +862,8 @@ function initMouseControls() {
 
     // Touch controls
     canvas.addEventListener('touchstart', (e) => {
+        startExperience(); // Start experience on first touch
+        
         if (isInCockpit) return;
         if (!introAnimationComplete) {
             skipIntroAnimation();
@@ -748,7 +926,18 @@ function initMouseControls() {
         // Limit vertical movement
         const verticalSensitivity = 0.002;
         const minVerticalAngle = 0;
-        const maxVerticalAngle = 0.2;
+        const maxVerticalAngle = 0.4;
+
+        // Limit horizontal movement
+        const horizontalSensitivity = 0.002;
+        const minHorizontalAngle = -2.8;
+        const maxHorizontalAngle = 2.8;
+        
+        cameraAngleHorizontal = Math.max(minHorizontalAngle, 
+            Math.min(maxHorizontalAngle, 
+                cameraAngleHorizontal - deltaX * horizontalSensitivity
+            )
+        );
         
         cameraAngleVertical = Math.max(minVerticalAngle, 
             Math.min(maxVerticalAngle, 
@@ -917,7 +1106,7 @@ function createSmokeParticles() {
         transparent: true,
         opacity: 0.2,
         depthWrite: false,
-        blending: THREE.AdditiveBlending,
+        blending: THREE.NormalBlending,  // Changed from AdditiveBlending to NormalBlending
         vertexColors: false,
         sizeAttenuation: true
     });
@@ -998,105 +1187,119 @@ function updateSmoke() {
 function animate() {
     requestAnimationFrame(animate);
     
-    // Update wheel rotations
-    const deltaTime = 1/60; // Assuming 60fps
-    const rotationAmount = WHEEL_ROTATION_SPEED * deltaTime;
-    
-    // Rotate train wheels
-    trainWheels.forEach(wheel => {
-        wheel.rotateY(rotationAmount);
-    });
-    
-    // Rotate carriage wheels
-    carriageWheels.forEach(wheelGroup => {
-        wheelGroup.forEach(wheel => {
+    if (!gameEnded) {
+        // Check for collision
+        if (checkCollision()) {
+            endGame();
+            return;
+        }
+        
+        // Update fog position to follow train
+        if (scene.fog) {
+            scene.fog.near = trainPosition - 100; // Start fog 100 units behind train
+            scene.fog.far = trainPosition - 2000;  // Extend 2000 units back from fog start
+        }
+        
+        // Update wheel rotations
+        const deltaTime = 1/60; // Assuming 60fps
+        const rotationAmount = WHEEL_ROTATION_SPEED * deltaTime;
+        
+        // Rotate train wheels
+        trainWheels.forEach(wheel => {
             wheel.rotateY(rotationAmount);
         });
-    });
-
-    // Apply touch momentum when not being touched
-    if (!isMouseDown && introAnimationComplete) {
-        if (Math.abs(touchVelocityX) > 0.001 || Math.abs(touchVelocityY) > 0.001) {
-            cameraAngleHorizontal += touchVelocityX * 0.1;
-            
-            const verticalDelta = -touchVelocityY * 0.05;
-            cameraAngleVertical = Math.max(0, Math.min(0.2, 
-                cameraAngleVertical + verticalDelta
-            ));
-
-            // Apply decay to velocities
-            touchVelocityX *= MOMENTUM_DECAY;
-            touchVelocityY *= MOMENTUM_DECAY;
-        }
-    }
-
-    // Move train forward
-    trainPosition += TRAIN_SPEED;
-    
-    // Calculate position and rotation along curve
-    const progress = (trainPosition % TRACK_SEGMENT_LENGTH) / TRACK_SEGMENT_LENGTH;
-    const curve = generateTrackCurve();
-    const point = curve.getPointAt(progress);
-    
-    // Adjust point.x to match actual train position
-    point.x += Math.floor(trainPosition / TRACK_SEGMENT_LENGTH) * TRACK_SEGMENT_LENGTH;
-    
-    // Update train position and rotation
-    train.position.copy(point);
-    train.position.y = 0.8;
-    
-    // Create a proper orientation matrix for the train
-    const up = new THREE.Vector3(0, 1, 0);
-    const forward = curve.getTangentAt(progress).normalize();
-    const right = new THREE.Vector3().crossVectors(up, forward).normalize();
-    up.crossVectors(forward, right);
-    
-    const rotationMatrix = new THREE.Matrix4().makeBasis(right, up, forward);
-    train.setRotationFromMatrix(rotationMatrix);
-    train.rotateY(-Math.PI / 2); // Changed from PI/2 to -PI/2 to reverse orientation
-    
-    // Update carriages with the same orientation logic
-    carriages.forEach((carriage, index) => {
-        const carriagePosition = trainPosition - ((index + 1) * 5.4) + .7  ; // Added -2 to bring all carriages closer to train
-        const progress = (carriagePosition / TRACK_SEGMENT_LENGTH) % 1;
         
+        // Rotate carriage wheels
+        carriageWheels.forEach(wheelGroup => {
+            wheelGroup.forEach(wheel => {
+                wheel.rotateY(rotationAmount);
+            });
+        });
+
+        // Apply touch momentum when not being touched
+        if (!isMouseDown && introAnimationComplete) {
+            if (Math.abs(touchVelocityX) > 0.001 || Math.abs(touchVelocityY) > 0.001) {
+                cameraAngleHorizontal += touchVelocityX * 0.1;
+                
+                const verticalDelta = -touchVelocityY * 0.05;
+                cameraAngleVertical = Math.max(0, Math.min(0.2, 
+                    cameraAngleVertical + verticalDelta
+                ));
+
+                // Apply decay to velocities
+                touchVelocityX *= MOMENTUM_DECAY;
+                touchVelocityY *= MOMENTUM_DECAY;
+            }
+        }
+
+        // Move train forward
+        trainPosition += TRAIN_SPEED;
+        
+        // Calculate position and rotation along curve
+        const progress = (trainPosition % TRACK_SEGMENT_LENGTH) / TRACK_SEGMENT_LENGTH;
         const curve = generateTrackCurve();
         const point = curve.getPointAt(progress);
         
-        carriage.position.copy(point);
-        carriage.position.y = 0.8;
+        // Adjust point.x to match actual train position
+        point.x += Math.floor(trainPosition / TRACK_SEGMENT_LENGTH) * TRACK_SEGMENT_LENGTH;
         
-        // Apply same orientation to carriages
-        const carriageForward = curve.getTangentAt(progress).normalize();
-        const carriageRight = new THREE.Vector3().crossVectors(up, carriageForward).normalize();
-        up.crossVectors(carriageForward, carriageRight);
+        // Update train position and rotation
+        train.position.copy(point);
+        train.position.y = 0.8;
         
-        const carriageRotationMatrix = new THREE.Matrix4().makeBasis(carriageRight, up, carriageForward);
-        carriage.setRotationFromMatrix(carriageRotationMatrix);
-        carriage.rotateY(-Math.PI / 2); // Changed from PI/2 to -PI/2 to match train
-    });
-    
-    // Replace the existing camera update code with this:
-    updateCamera();
-    
-    // Update smoke particles
-    updateSmoke();
-    
-    // Update tree positions
-    updateTrees();
-    
-    // Update mountain positions
-    updateMountains();
-    
-    // Update deer positions
-    updateDeer();
-    
-    // Update train sound volume during intro
-    if (!introAnimationComplete) {
-        const elapsed = Date.now() - introStartTime;
-        const progress = Math.min(elapsed / INTRO_DURATION, 1);
-        trainSound.volume = INITIAL_TRAIN_VOLUME + 
-            (FINAL_TRAIN_VOLUME - INITIAL_TRAIN_VOLUME) * progress;
+        // Create a proper orientation matrix for the train
+        const up = new THREE.Vector3(0, 1, 0);
+        const forward = curve.getTangentAt(progress).normalize();
+        const right = new THREE.Vector3().crossVectors(up, forward).normalize();
+        up.crossVectors(forward, right);
+        
+        const rotationMatrix = new THREE.Matrix4().makeBasis(right, up, forward);
+        train.setRotationFromMatrix(rotationMatrix);
+        train.rotateY(-Math.PI / 2); // Changed from PI/2 to -PI/2 to reverse orientation
+        
+        // Update carriages with the same orientation logic
+        carriages.forEach((carriage, index) => {
+            const carriagePosition = trainPosition - ((index + 1) * 5.4) + .7  ; // Added -2 to bring all carriages closer to train
+            const progress = (carriagePosition / TRACK_SEGMENT_LENGTH) % 1;
+            
+            const curve = generateTrackCurve();
+            const point = curve.getPointAt(progress);
+            
+            carriage.position.copy(point);
+            carriage.position.y = 0.8;
+            
+            // Apply same orientation to carriages
+            const carriageForward = curve.getTangentAt(progress).normalize();
+            const carriageRight = new THREE.Vector3().crossVectors(up, carriageForward).normalize();
+            up.crossVectors(carriageForward, carriageRight);
+            
+            const carriageRotationMatrix = new THREE.Matrix4().makeBasis(carriageRight, up, carriageForward);
+            carriage.setRotationFromMatrix(carriageRotationMatrix);
+            carriage.rotateY(-Math.PI / 2); // Changed from PI/2 to -PI/2 to match train
+        });
+        
+        // Replace the existing camera update code with this:
+        updateCamera();
+        
+        // Update smoke particles
+        updateSmoke();
+        
+        // Update tree positions
+        updateTrees();
+        
+        // Update mountain positions
+        updateMountains();
+        
+        // Update deer positions
+        updateDeer();
+        
+        // Update train sound volume during intro
+        if (!introAnimationComplete) {
+            const elapsed = Date.now() - introStartTime;
+            const progress = Math.min(elapsed / INTRO_DURATION, 1);
+            trainSound.volume = INITIAL_TRAIN_VOLUME + 
+                (FINAL_TRAIN_VOLUME - INITIAL_TRAIN_VOLUME) * progress;
+        }
     }
     
     renderer.render(scene, camera);
@@ -1116,12 +1319,12 @@ function generateTrackCurve() {
     segmentPoints.push(new THREE.Vector3(0, 0, 0));
     
     // Generate curve control points that end where they started (in Z)
-    const segments = 80;
+    const segments = 10;
     const segmentLength = TRACK_SEGMENT_LENGTH / segments;
     
     for (let i = 1; i < segments; i++) {
         const x = i * segmentLength;
-        const z = Math.sin(i * 6) * 3;
+        const z = Math.sin(i * 2) * 8;
         segmentPoints.push(new THREE.Vector3(x, 0, z));
     }
     
@@ -1213,7 +1416,24 @@ function updateMountains() {}
 
 // Empty function since we don't want to update deer anymore
 function updateDeer() {
+    if (!hasStarted) return;
+    
+    const currentTime = Date.now();
+    
     deer.forEach(deerGroup => {
+        // Handle fade-in animation
+        if (currentTime - deerGroup.userData.startTime <= deerGroup.userData.fadeDuration) {
+            const progress = (currentTime - deerGroup.userData.startTime) / deerGroup.userData.fadeDuration;
+            const opacity = Math.min(progress, 1);
+            
+            // Update opacity for all meshes in the deer group
+            deerGroup.children.forEach(mesh => {
+                if (mesh.material) {
+                    mesh.material.opacity = opacity;
+                }
+            });
+        }
+        
         // Check if whistle is blown and deer is within range
         if (isWhistling && !deerGroup.userData.isFleeing) {
             // Calculate distance to train
@@ -1264,4 +1484,151 @@ function updateDeer() {
             }
         }
     });
+}
+
+function createFallenTree() {
+    // Create main trunk
+    const trunkGeometry = new THREE.CylinderGeometry(.5, 1, 15, 12);
+    const trunkMaterial = new THREE.MeshStandardMaterial({
+        color: 0x2b1810, // Dark brown
+        metalness: 0,
+        roughness: 1
+    });
+    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+    
+    // Rotate to lay horizontally across track
+    trunk.rotation.z = Math.PI / 2;
+    trunk.rotation.y = Math.PI / 2;
+    
+    // Position at end of track
+    const endPosition = generateTrackCurve().getPointAt(.95); // Place near end of track
+    trunk.position.set(
+        endPosition.x,
+        .5, // Raise slightly above track
+        endPosition.z
+    );
+    
+    // Add some broken branches
+    const numBranches = 6;
+    for (let i = 0; i < numBranches; i++) {
+        const branchLength = 2 + Math.random() * 3;
+        const branchGeometry = new THREE.CylinderGeometry(0.3, 0.5, branchLength, 6);
+        const branch = new THREE.Mesh(branchGeometry, trunkMaterial);
+        
+        // Position along trunk
+        const offset = (Math.random() - 0.5) * 10;
+        branch.position.set(0, offset, 0);
+        
+        // Random rotation
+        branch.rotation.x = Math.random() * Math.PI;
+        branch.rotation.z = (Math.random() - 0.5) * Math.PI / 2;
+        
+        trunk.add(branch);
+    }
+    
+    // Add some foliage/broken leaves
+    const foliageGeometry = new THREE.ConeGeometry(1, 2, 6);
+    const foliageMaterial = new THREE.MeshStandardMaterial({
+        color: 0x1d3b1d, // Dark pine green
+        metalness: 0,
+        roughness: 1
+    });
+    
+    for (let i = 0; i < 8; i++) {
+        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+        const offset = (Math.random() - 0.5) * 12;
+        foliage.position.set(
+            (Math.random() - 0.5) * 2,
+            offset,
+            (Math.random() - 0.5) * 2
+        );
+        foliage.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+        trunk.add(foliage);
+    }
+    
+    scene.add(trunk);
+    fallenTree = trunk; // Store reference to fallen tree
+}
+
+function checkCollision() {
+    if (!fallenTree || gameEnded) return false;
+    
+    // Get train and tree positions
+    const trainPos = train.position.clone();
+    const treePos = fallenTree.position.clone();
+    
+    // Calculate distance between train and tree
+    const distance = trainPos.distanceTo(treePos);
+    
+    // If distance is less than 3 units (approximate combined size of train and tree), collision occurred
+    return distance < 3;
+}
+
+function endGame() {
+    gameEnded = true;
+    
+    // Stop train movement
+    TRAIN_SPEED = 0;
+    
+    // Stop and reset all audio elements
+    const audioElements = [trainSound, ambientSound, hornSound];
+    audioElements.forEach(audio => {
+        if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.volume = 0;
+        }
+    });
+    
+    // Clear any pending whistle timeout
+    if (whistleTimeout) {
+        clearTimeout(whistleTimeout);
+        isWhistling = false;
+    }
+    
+    // Display game over message
+    const gameOverDiv = document.createElement('div');
+    gameOverDiv.style.position = 'fixed';
+    gameOverDiv.style.top = '50%';
+    gameOverDiv.style.left = '50%';
+    gameOverDiv.style.transform = 'translate(-50%, -50%)';
+    gameOverDiv.style.color = 'white';
+    gameOverDiv.style.fontSize = '48px';
+    gameOverDiv.style.fontFamily = 'Arial, sans-serif';
+    gameOverDiv.style.textAlign = 'center';
+    gameOverDiv.style.textShadow = '2px 2px 4px rgba(0,0,0,0.5)';
+    gameOverDiv.innerHTML = 'Game Over<br>Train Crashed';
+    document.body.appendChild(gameOverDiv);
+}
+
+// Add new function for creating the sun
+function createSun() {
+    const sunGeometry = new THREE.SphereGeometry(100, 32, 32);  // Made sun bigger
+    const sunMaterial = new THREE.MeshStandardMaterial({
+        color: 0x8B0000, // Dark red
+        emissive: 0x8B0000, // Matching emissive color
+        emissiveIntensity: 2,
+        metalness: 0,
+        roughness: 1
+    });
+    
+    // Create sun group to keep sun and light together
+    const sunGroup = new THREE.Group();
+    
+    const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+    sunGroup.add(sun);
+    
+    // Add a point light at the exact center of the sun
+    const sunLight = new THREE.PointLight(0x8B0000, 1, 2000);  // Increased intensity and range
+    sunLight.position.set(0, 0, 0);
+    sunGroup.add(sunLight);
+    
+    // Position the entire sun group closer and higher
+    sunGroup.position.set(trainPosition / .1, 200, -1000);
+    
+    scene.add(sunGroup);
 }
