@@ -34,9 +34,12 @@ const TREE_RENDER_DISTANCE = 500;  // How far ahead/behind to show trees
 let mountains = [];
 const NUM_MOUNTAINS = 30;
 let deer = [];
-const DEER_SPACING = 50 + Math.random() * 1.5; // Fixed spacing of 100 units
+const DEER_SPACING = 5 + Math.random() * 1.5; // Fixed spacing of 100 units
 const NUM_DEER = Math.floor(TRACK_SEGMENT_LENGTH / DEER_SPACING); // Number of deer based on track length
 let isWhistling = false;
+let isHeadlightBright = false;  // Track if headlight is in bright mode
+let headlightBeam;  // Reference to the spotlight
+let headlightMesh;  // Reference to the physical headlight
 let hornSound;
 let whistleTimeout;
 const INITIAL_TRAIN_VOLUME = 0.06; // 20% of 0.3
@@ -47,6 +50,15 @@ let ambientSound;
 let hasStarted = false; // Add flag to track if experience has started
 let gameEnded = false;
 let fallenTree = null; // Reference to store fallen tree object
+let sunGroup;
+const INITIAL_SUN_HEIGHT = 200;
+const FINAL_SUN_HEIGHT = -200;
+const SUN_DROP_SPEED = 0.1;
+let isSunSetting = false;
+let sunScale = 1.0;  // Add sun scale tracking
+const SUN_SCALE_INCREASE = 0.1; // 10% increase for collisions
+let targetSunScale = 1.0;  // The scale we're animating towards
+const SUN_SCALE_SPEED = 0.1; // How fast to animate the scale change
 
 
 // Initialize the scene
@@ -192,7 +204,7 @@ function createTrain() {
     trainGroup.add(trainBody);
 
     // Add three decorative cylinders along the main body
-    const ringGeometry = new THREE.CylinderGeometry(0.525, 0.525, 0.1, 16); // Radius is 1.05 * main body radius
+    const ringGeometry = new THREE.CylinderGeometry(0.525, 0.525, 0.1, 32); // Radius is 1.05 * main body radius
     const ringMaterial = new THREE.MeshStandardMaterial({ 
         color: 0x4d4d4d, // Slightly lighter than body
         metalness: 0,
@@ -348,20 +360,20 @@ function createTrain() {
         emissive: 0xFFFFCC,
         emissiveIntensity: 1
     });
-    const headlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
-    headlight.rotation.z = Math.PI / 2;
-    headlight.position.set(1.83, 0.50, 0);
+    headlightMesh = new THREE.Mesh(headlightGeometry, headlightMaterial);
+    headlightMesh.rotation.z = Math.PI / 2;
+    headlightMesh.position.set(1.83, 0.50, 0);
     
     // Add spotlight for headlight beam
-    const headlightBeam = new THREE.SpotLight(0xFFFFCC, 5);
-    headlightBeam.position.copy(headlight.position);
+    headlightBeam = new THREE.SpotLight(0xFFFFCC, 5);
+    headlightBeam.position.copy(headlightMesh.position);
     headlightBeam.angle = Math.PI / 10; // 22.5 degree cone
     headlightBeam.penumbra = 0.4;
     headlightBeam.decay = .5;
     headlightBeam.distance = 50;
-    headlightBeam.target.position.set(headlight.position.x + 1, headlight.position.y, headlight.position.z);
+    headlightBeam.target.position.set(headlightMesh.position.x + 1, headlightMesh.position.y, headlightMesh.position.z);
     
-    trainGroup.add(headlight);
+    trainGroup.add(headlightMesh);
     trainGroup.add(headlightBeam);
     trainGroup.add(headlightBeam.target);
 
@@ -760,7 +772,7 @@ function createMountains() {
 
 function createDeer() {
     const deerMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0x3d2213, // Dark brown
+        color: 0x3d2213,
         transparent: true,
         opacity: 0,
         metalness: 0,
@@ -768,7 +780,7 @@ function createDeer() {
     });
     
     const startTime = Date.now();
-    const FADE_DURATION = 2000; // 2 seconds in milliseconds
+    const FADE_DURATION = 2000;
     
     for (let i = 0; i < NUM_DEER; i++) {
         const deerGroup = new THREE.Group();
@@ -779,10 +791,17 @@ function createDeer() {
         body.position.set(0, 0.55, 0);
         deerGroup.add(body);
         
+        // Create neck
+        const neckGeometry = new THREE.BoxGeometry(0.3, 0.1, 0.1);
+        const neck = new THREE.Mesh(neckGeometry, deerMaterial.clone());
+        neck.position.set(0.39, 0.4, 0);
+        neck.rotateZ(Math.PI / .15);
+        deerGroup.add(neck);
+
         // Create head - 50% smaller
-        const headGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.15);
+        const headGeometry = new THREE.BoxGeometry(0.15, 0.3, 0.1);
         const head = new THREE.Mesh(headGeometry, deerMaterial.clone());
-        head.position.set(0.3, 0.7, 0);
+        head.position.set(0.45, 0.3, 0);
         deerGroup.add(head);
         
         // Create legs - 50% smaller
@@ -817,16 +836,20 @@ function createDeer() {
         deerGroup.rotateY(Math.random() * Math.PI * 2);
         
         // Add movement properties to deer
-        deerGroup.userData.originalX = trackPoint.x;
-        deerGroup.userData.originalZ = trackPoint.z + (side * offset);
-        deerGroup.userData.movementSpeed = 0.01 + Math.random() * 0.02;
-        deerGroup.userData.normalSpeed = 0.01 + Math.random() * 0.02;
-        deerGroup.userData.movementRange = 30;
-        deerGroup.userData.movementDirection = 1;
-        deerGroup.userData.side = side;
-        deerGroup.userData.isFleeing = false;
-        deerGroup.userData.startTime = startTime;
-        deerGroup.userData.fadeDuration = FADE_DURATION;
+        deerGroup.userData = {
+            originalX: trackPoint.x,
+            originalZ: trackPoint.z + (side * offset),
+            movementSpeed: 0.005 + Math.random() * 0.02,
+            normalSpeed: 0.005 + Math.random() * 0.02,
+            movementRange: 30,
+            movementDirection: 1,
+            side: side,
+            isFleeing: false,
+            startTime: startTime,
+            fadeDuration: FADE_DURATION,
+            hasCollided: false,  // Initialize collision tracking
+            hasAlerted: false  // Initialize alert tracking
+        };
         
         deer.push(deerGroup);
         scene.add(deerGroup);
@@ -1300,6 +1323,35 @@ function animate() {
             trainSound.volume = INITIAL_TRAIN_VOLUME + 
                 (FINAL_TRAIN_VOLUME - INITIAL_TRAIN_VOLUME) * progress;
         }
+
+        // Add sun animation
+        if (isSunSetting && sunGroup) {
+            if (sunGroup.position.y > FINAL_SUN_HEIGHT) {
+                sunGroup.position.y -= SUN_DROP_SPEED;
+                
+                // Gradually decrease emissive intensity and light intensity
+                const progress = (sunGroup.position.y - FINAL_SUN_HEIGHT) / (INITIAL_SUN_HEIGHT - FINAL_SUN_HEIGHT);
+                const sunMesh = sunGroup.children[0];
+                const sunLight = sunGroup.children[1];
+                
+                sunMesh.material.emissiveIntensity = 2 * progress;
+                sunLight.intensity = progress;
+                
+                // Make sky darker as sun sets
+                scene.background.setRGB(
+                    0.16 * progress + 0.05,  // Reduce from 0.16 to 0.1
+                    0.23 * progress + 0.05,  // Reduce from 0.23 to 0.1
+                    0.30 * progress + 0.05   // Reduce from 0.30 to 0.1
+                );
+            }
+        }
+
+        // Add sun scale animation
+        if (sunGroup && sunScale !== targetSunScale) {
+            // Smoothly interpolate current scale to target scale
+            sunScale += (targetSunScale - sunScale) * SUN_SCALE_SPEED;
+            sunGroup.scale.set(sunScale, sunScale, sunScale);
+        }
     }
     
     renderer.render(scene, camera);
@@ -1388,6 +1440,12 @@ document.addEventListener('keydown', (e) => {
             hornSound.pause();
         }, WHISTLE_DURATION);
     }
+    if (e.key === 'z' || e.key === 'Z') {
+        isHeadlightBright = !isHeadlightBright;
+        // Toggle headlight intensity
+        headlightMesh.material.emissiveIntensity = isHeadlightBright ? 2 : 1;
+        headlightBeam.intensity = isHeadlightBright ? 10 : 5;
+    }
 });
 
 // Initialize and start animation
@@ -1421,12 +1479,23 @@ function updateDeer() {
     const currentTime = Date.now();
     
     deer.forEach(deerGroup => {
+        // Check for collision with train first
+        const distanceToTrain = Math.sqrt(
+            Math.pow(deerGroup.position.x - train.position.x, 2) +
+            Math.pow(deerGroup.position.z - train.position.z, 2)
+        );
+        
+        // If deer is close enough to train and hasn't collided yet
+        if (distanceToTrain < 2 && !deerGroup.userData.hasCollided) {
+            deerGroup.userData.hasCollided = true;
+            targetSunScale += SUN_SCALE_INCREASE;
+        }
+        
         // Handle fade-in animation
         if (currentTime - deerGroup.userData.startTime <= deerGroup.userData.fadeDuration) {
             const progress = (currentTime - deerGroup.userData.startTime) / deerGroup.userData.fadeDuration;
             const opacity = Math.min(progress, 1);
             
-            // Update opacity for all meshes in the deer group
             deerGroup.children.forEach(mesh => {
                 if (mesh.material) {
                     mesh.material.opacity = opacity;
@@ -1434,53 +1503,37 @@ function updateDeer() {
             });
         }
         
-        // Check if whistle is blown and deer is within range
-        if (isWhistling && !deerGroup.userData.isFleeing) {
-            // Calculate distance to train
-            const distanceToTrain = Math.sqrt(
-                Math.pow(deerGroup.position.x - train.position.x, 2) +
-                Math.pow(deerGroup.position.z - train.position.z, 2)
-            );
+        // Update neck and head positions based on whistle and distance
+        const neck = deerGroup.children[1];  // Neck is the second child
+        const head = deerGroup.children[2];  // Head is the third child
+        
+        // Only react to whistle if within range (40 units) and not already alerted
+        if (isWhistling && !deerGroup.userData.hasAlerted && distanceToTrain <= 40) {
+            // Alert position - head up looking around
+            neck.position.set(0.29, 0.8, 0);
+            neck.rotation.set(0, 0, Math.PI / 3);
+            head.position.set(0.45, 0.9, 0);
+            head.rotation.set(0, 0, Math.PI / 2);
+            deerGroup.userData.hasAlerted = true;  // Mark that this deer has been alerted
             
-            // Only flee if within 50 units of train
-            if (distanceToTrain <= 30) {
-                // Start fleeing when whistle blows
+            // Set a timeout to start fleeing after 1 second
+            setTimeout(() => {
                 deerGroup.userData.isFleeing = true;
-                // Point away from track (accounting for initial 90-degree rotation)
-                deerGroup.rotation.y = deerGroup.userData.side > 0 ? Math.PI : 0;
-            }
+            }, 1000);
         }
         
         if (deerGroup.userData.isFleeing) {
-            // Move away from track quickly
-            const fleeSpeed = 0.1;
-            const direction = deerGroup.userData.side > 0 ? 1 : -1;
+            const fleeSpeed = 0.2;
+            // Use the deer's current forward direction based on its rotation
+            const direction = new THREE.Vector3(1, 0, 0);
+            direction.applyQuaternion(deerGroup.quaternion);
             
-            // Set rotation to face opposite of fleeing direction
-            // If fleeing positive Z (direction = 1), face negative Z (-Math.PI/2)
-            // If fleeing negative Z (direction = -1), face positive Z (Math.PI/2)
-            deerGroup.rotation.y = -direction * Math.PI/2;
-            
-            // Calculate distance fled so far
             const distanceFled = Math.abs(deerGroup.position.z - deerGroup.userData.originalZ);
             
             if (distanceFled < deerGroup.userData.movementRange) {
-                // Keep fleeing until reaching maximum range
-                deerGroup.position.z += direction * fleeSpeed;
-            }
-        } else {
-            // Normal idle movement when not fleeing
-            const idleSpeed = deerGroup.userData.normalSpeed;
-            // Move in the direction the deer is facing
-            deerGroup.position.x += Math.cos(deerGroup.rotation.y) * idleSpeed;
-            deerGroup.position.z += Math.sin(deerGroup.rotation.y) * idleSpeed;
-            
-            // Keep within small range of original position when not fleeing
-            const idleRange = 2;
-            if (Math.abs(deerGroup.position.x - deerGroup.userData.originalX) > idleRange ||
-                Math.abs(deerGroup.position.z - deerGroup.userData.originalZ) > idleRange) {
-                // Turn around
-                deerGroup.rotation.y += Math.PI;
+                // Move in the direction the deer is facing
+                deerGroup.position.x += direction.x * fleeSpeed;
+                deerGroup.position.z += direction.z * fleeSpeed;
             }
         }
     });
@@ -1607,28 +1660,33 @@ function endGame() {
 
 // Add new function for creating the sun
 function createSun() {
-    const sunGeometry = new THREE.SphereGeometry(100, 32, 32);  // Made sun bigger
+    const sunGeometry = new THREE.SphereGeometry(100, 32, 32);
     const sunMaterial = new THREE.MeshStandardMaterial({
         color: 0x8B0000, // Dark red
-        emissive: 0x8B0000, // Matching emissive color
-        emissiveIntensity: 2,
+        emissive: 0x8B0000,
+        emissiveIntensity: 1,
         metalness: 0,
         roughness: 1
     });
     
     // Create sun group to keep sun and light together
-    const sunGroup = new THREE.Group();
+    sunGroup = new THREE.Group();  // Changed to use global variable
     
     const sun = new THREE.Mesh(sunGeometry, sunMaterial);
     sunGroup.add(sun);
     
     // Add a point light at the exact center of the sun
-    const sunLight = new THREE.PointLight(0x8B0000, 1, 2000);  // Increased intensity and range
+    const sunLight = new THREE.PointLight(0x8B0000, 1, 200);
     sunLight.position.set(0, 0, 0);
     sunGroup.add(sunLight);
     
-    // Position the entire sun group closer and higher
-    sunGroup.position.set(trainPosition / .1, 200, -1000);
+    // Position the entire sun group
+    sunGroup.position.set(trainPosition / 0.1, INITIAL_SUN_HEIGHT, -1000);
     
     scene.add(sunGroup);
+}
+
+// Add function to start sun setting
+function startSunset() {
+    isSunSetting = true;
 }
