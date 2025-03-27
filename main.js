@@ -32,7 +32,7 @@ let isInCockpit = false;
 const COCKPIT_OFFSET = new THREE.Vector3(-.8, .8, -.99); // Position in middle of cockpit
 const TREE_RENDER_DISTANCE = 500;  // How far ahead/behind to show trees
 let mountains = [];
-const NUM_MOUNTAINS = 30;
+const NUM_MOUNTAINS = 50;
 let deer = [];
 const DEER_SPACING = 5 + Math.random() * 1.5; // Fixed spacing of 100 units
 const NUM_DEER = Math.floor(TRACK_SEGMENT_LENGTH / DEER_SPACING); // Number of deer based on track length
@@ -45,6 +45,12 @@ let whistleTimeout;
 const INITIAL_TRAIN_VOLUME = 0.06; // 20% of 0.3
 const FINAL_TRAIN_VOLUME = 0.3;
 let trainSound;
+let deerThudSound;
+let bigfootSound;
+let deerCollisionCount = 0;
+const INITIAL_BIGFOOT_VOLUME = 0.03;
+const BIGFOOT_VOLUME_INCREMENT = 0.01;
+let deerThudSoundVolume = 1.0;
 const WHISTLE_DURATION = 1000; // 1 second in milliseconds
 let ambientSound;
 let hasStarted = false; // Add flag to track if experience has started
@@ -52,13 +58,25 @@ let gameEnded = false;
 let fallenTree = null; // Reference to store fallen tree object
 let sunGroup;
 const INITIAL_SUN_HEIGHT = 200;
-const FINAL_SUN_HEIGHT = -200;
+const FINAL_SUN_HEIGHT = -100;
 const SUN_DROP_SPEED = 0.1;
 let isSunSetting = false;
 let sunScale = 1.0;  // Add sun scale tracking
 const SUN_SCALE_INCREASE = 0.1; // 10% increase for collisions
 let targetSunScale = 1.0;  // The scale we're animating towards
 const SUN_SCALE_SPEED = 0.1; // How fast to animate the scale change
+let isShaking = false;
+let shakeStartTime = 0;
+const SHAKE_DURATION = 100; // 1 second in milliseconds
+const SHAKE_INTENSITY = 0.01;
+let isTransitioningToCockpit = false;
+let transitionStartTime = 0;
+const COCKPIT_TRANSITION_DURATION = 2000; // 1 second in milliseconds
+let isSunShaking = false;
+let sunShakeStartTime = 0;
+const SUN_SHAKE_DURATION = 3000; // 4 seconds to match bigfoot sound
+const SUN_SHAKE_INTENSITY = 5; // Intensity of the shake
+const sunOriginalPosition = new THREE.Vector3();
 
 
 // Initialize the scene
@@ -72,6 +90,9 @@ function init() {
     const fogNear = 0;  // Start at train position
     const fogFar = 20;  // Extend far behind train
     scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+    
+    // Add stars to the night sky
+    createStars();
     
     // Add the sun
     createSun();
@@ -91,6 +112,22 @@ function init() {
     // Initialize horn sound
     hornSound = document.getElementById('hornSound');
     hornSound.volume = 0.4;
+
+    // Initialize deer thud sound
+    deerThudSound = document.getElementById('deerThudSound');
+    if (deerThudSound) {
+        deerThudSound.volume = 1.0;
+        deerThudSound.preload = 'auto';
+        deerThudSound.load();
+    }
+
+    // Initialize bigfoot sound
+    bigfootSound = document.getElementById('bigfootSound');
+    if (bigfootSound) {
+        bigfootSound.volume = INITIAL_BIGFOOT_VOLUME;
+        bigfootSound.preload = 'auto';
+        bigfootSound.load();
+    }
     
     // Add ground plane
     const groundGeometry = new THREE.PlaneGeometry(TRACK_SEGMENT_LENGTH * 40, TRACK_SEGMENT_LENGTH * 4);
@@ -192,7 +229,7 @@ function createTrain() {
     const trainGroup = new THREE.Group();
     
     // Main body - adjust y from 0.38 to 0.50
-    const bodyGeometry = new THREE.CylinderGeometry(.5, .5, 2.5, 16);
+    const bodyGeometry = new THREE.CylinderGeometry(.5, .5, 2.5, 32);
     const bodyMaterial = new THREE.MeshStandardMaterial({ 
         color: 0x3d3d3d, // Darker gray
         metalness: 0,
@@ -859,20 +896,7 @@ function createDeer() {
 function initMouseControls() {
     const canvas = renderer.domElement;
     
-    function startExperience() {
-        if (!hasStarted) {
-            hasStarted = true;
-            createDeer(); // Create deer when experience starts
-            // Start ambient sound
-            ambientSound.play().catch(error => {
-                console.log("Ambient sound play failed:", error);
-            });
-        }
-    }
-    
     canvas.addEventListener('mousedown', (e) => {
-        startExperience(); // Start experience on first click
-        
         if (isInCockpit) return;
         if (!introAnimationComplete) {
             skipIntroAnimation();
@@ -885,8 +909,6 @@ function initMouseControls() {
 
     // Touch controls
     canvas.addEventListener('touchstart', (e) => {
-        startExperience(); // Start experience on first touch
-        
         if (isInCockpit) return;
         if (!introAnimationComplete) {
             skipIntroAnimation();
@@ -985,11 +1007,19 @@ function updateIntroAnimation() {
     const eased = Math.pow((1 - Math.cos(progress * Math.PI)) / 2, 1.5);
     
     // Show menu items when animation is 75% complete
-    if (progress >= 0.75 && !document.querySelector('.menu-item.visible')) {
-        const menuItems = document.querySelectorAll('.menu-item');
-        menuItems.forEach(item => {
-            item.classList.add('visible');
-        });
+    if (progress >= 0.75) {
+        // Make top menu and its item visible
+        const topMenu = document.querySelector('.top-menu');
+        const topMenuItem = document.querySelector('.top-menu .menu-item');
+        if (topMenu && !topMenu.classList.contains('visible')) {
+            topMenu.classList.add('visible');
+        }
+        if (topMenuItem && !topMenuItem.classList.contains('visible')) {
+            topMenuItem.classList.add('visible');
+            topMenuItem.style.opacity = '1';  // Force opacity
+            topMenuItem.style.transition = 'opacity 0.5s ease';  // Add transition
+            topMenuItem.style.pointerEvents = 'auto';  // Ensure clickable
+        }
     }
     
     // Start from a wide angle view
@@ -1028,33 +1058,78 @@ function updateCamera() {
         return;
     }
 
-    if (isInCockpit) {
-        // Position camera in cockpit
-        const cockpitPosition = train.position.clone().add(COCKPIT_OFFSET);
-        camera.position.copy(cockpitPosition);
+    let finalPosition = new THREE.Vector3();
+    let finalTarget = new THREE.Vector3();
+
+    // Calculate both third-person and cockpit positions
+    const cockpitPosition = train.position.clone().add(COCKPIT_OFFSET);
+    const forward = new THREE.Vector3(1, 0, 0);
+    forward.applyQuaternion(train.quaternion);
+    const cockpitTarget = cockpitPosition.clone().add(forward.multiplyScalar(10));
+
+    const horizontalDistance = CAMERA_DISTANCE * Math.cos(cameraAngleVertical);
+    const verticalDistance = CAMERA_DISTANCE * Math.sin(cameraAngleVertical);
+    const cameraOffset = new THREE.Vector3(
+        horizontalDistance * Math.cos(cameraAngleHorizontal),
+        verticalDistance,
+        horizontalDistance * Math.sin(cameraAngleHorizontal)
+    );
+    const thirdPersonPosition = train.position.clone().add(cameraOffset);
+    const thirdPersonTarget = train.position.clone();
+
+    if (isTransitioningToCockpit) {
+        const elapsed = Date.now() - transitionStartTime;
+        const progress = Math.min(elapsed / COCKPIT_TRANSITION_DURATION, 1);
         
-        // Get the train's forward direction from its orientation
-        const forward = new THREE.Vector3(1, 0, 0);  // Changed from (0, 0, 1) to (1, 0, 0)
-        forward.applyQuaternion(train.quaternion);
+        // Use smooth step function for easing
+        const t = progress * progress * (3 - 2 * progress);
         
-        // Create look target using the train's forward direction
-        const lookTarget = cockpitPosition.clone().add(forward.multiplyScalar(10));
+        // Determine start and end positions based on transition direction
+        const startPos = isInCockpit ? thirdPersonPosition : cockpitPosition;
+        const endPos = isInCockpit ? cockpitPosition : thirdPersonPosition;
+        const startTarget = isInCockpit ? thirdPersonTarget : cockpitTarget;
+        const endTarget = isInCockpit ? cockpitTarget : thirdPersonTarget;
         
-        camera.lookAt(lookTarget);
+        // Interpolate between positions
+        finalPosition.lerpVectors(startPos, endPos, t);
+        finalTarget.lerpVectors(startTarget, endTarget, t);
+        
+        if (progress >= 1) {
+            isTransitioningToCockpit = false;
+        }
     } else {
-        // Third-person camera using stored values
-        const horizontalDistance = CAMERA_DISTANCE * Math.cos(cameraAngleVertical);
-        const verticalDistance = CAMERA_DISTANCE * Math.sin(cameraAngleVertical);
-        
-        const cameraOffset = new THREE.Vector3(
-            horizontalDistance * Math.cos(cameraAngleHorizontal),
-            verticalDistance,
-            horizontalDistance * Math.sin(cameraAngleHorizontal)
-        );
-        
-        camera.position.copy(train.position).add(cameraOffset);
-        camera.lookAt(train.position);
+        if (isInCockpit) {
+            finalPosition.copy(cockpitPosition);
+            finalTarget.copy(cockpitTarget);
+        } else {
+            finalPosition.copy(thirdPersonPosition);
+            finalTarget.copy(thirdPersonTarget);
+        }
     }
+
+    // Apply camera shake if active
+    if (isShaking) {
+        const elapsedShakeTime = Date.now() - shakeStartTime;
+        if (elapsedShakeTime < SHAKE_DURATION) {
+            const progress = 1 - (elapsedShakeTime / SHAKE_DURATION);
+            const intensity = SHAKE_INTENSITY * progress;
+            
+            const shakeOffset = new THREE.Vector3(
+                (Math.random() - 0.5) * intensity,
+                (Math.random() - 0.5) * intensity,
+                (Math.random() - 0.5) * intensity
+            );
+            
+            finalPosition.add(shakeOffset);
+            finalTarget.add(shakeOffset);
+        } else {
+            isShaking = false;
+        }
+    }
+
+    // Apply final camera position and target
+    camera.position.copy(finalPosition);
+    camera.lookAt(finalTarget);
 }
 
 function createSmokeParticles() {
@@ -1338,11 +1413,7 @@ function animate() {
                 sunLight.intensity = progress;
                 
                 // Make sky darker as sun sets
-                scene.background.setRGB(
-                    0.16 * progress + 0.05,  // Reduce from 0.16 to 0.1
-                    0.23 * progress + 0.05,  // Reduce from 0.23 to 0.1
-                    0.30 * progress + 0.05   // Reduce from 0.30 to 0.1
-                );
+               
             }
         }
 
@@ -1351,6 +1422,24 @@ function animate() {
             // Smoothly interpolate current scale to target scale
             sunScale += (targetSunScale - sunScale) * SUN_SCALE_SPEED;
             sunGroup.scale.set(sunScale, sunScale, sunScale);
+        }
+
+        // Add sun shake animation
+        if (isSunShaking && sunGroup) {
+            const elapsedShakeTime = Date.now() - sunShakeStartTime;
+            if (elapsedShakeTime < SUN_SHAKE_DURATION) {
+                const progress = 1 - (elapsedShakeTime / SUN_SHAKE_DURATION);
+                const intensity = SUN_SHAKE_INTENSITY * progress;
+                
+                // Apply random offset to sun position
+                sunGroup.position.x = sunOriginalPosition.x + (Math.random() - 0.5) * intensity;
+                sunGroup.position.y = sunOriginalPosition.y + (Math.random() - 0.5) * intensity;
+                sunGroup.position.z = sunOriginalPosition.z + (Math.random() - 0.5) * intensity;
+            } else {
+                // Reset sun position and stop shaking
+                isSunShaking = false;
+                sunGroup.position.copy(sunOriginalPosition);
+            }
         }
     }
     
@@ -1424,7 +1513,9 @@ function skipIntroAnimation() {
 // Add a keyboard listener for switching views
 document.addEventListener('keydown', (e) => {
     if (e.key === 'c' || e.key === 'C') {
-        isInCockpit = !isInCockpit;
+        isInCockpit = !isInCockpit;  // Toggle the target view
+        isTransitioningToCockpit = true;  // Start transition
+        transitionStartTime = Date.now();  // Record start time
     }
     if (e.code === 'Space' && !isWhistling) {
         isWhistling = true;
@@ -1478,7 +1569,7 @@ function updateDeer() {
     
     const currentTime = Date.now();
     
-    deer.forEach(deerGroup => {
+    deer.forEach((deerGroup, index) => {
         // Check for collision with train first
         const distanceToTrain = Math.sqrt(
             Math.pow(deerGroup.position.x - train.position.x, 2) +
@@ -1489,6 +1580,71 @@ function updateDeer() {
         if (distanceToTrain < 2 && !deerGroup.userData.hasCollided) {
             deerGroup.userData.hasCollided = true;
             targetSunScale += SUN_SCALE_INCREASE;
+            // Start camera shake
+            isShaking = true;
+            shakeStartTime = Date.now();
+            
+            // Play deer thud sound
+            if (deerThudSound) {
+                try {
+                    deerThudSound.currentTime = 0;
+                    deerThudSound.volume = 1.0;
+                    deerThudSound.play().catch(error => {
+                        console.log("Deer thud sound play failed:", error);
+                    });
+                    
+                    // Increment collision count and play bigfoot sound after 1 second
+                    deerCollisionCount++;
+                    const bigfootVolume = Math.min(1.0, INITIAL_BIGFOOT_VOLUME + (BIGFOOT_VOLUME_INCREMENT * (deerCollisionCount - 1)));
+                    
+                    setTimeout(() => {
+                        if (bigfootSound) {
+                            bigfootSound.currentTime = 0;
+                            bigfootSound.volume = bigfootVolume;
+                            bigfootSound.play().catch(error => {
+                                console.log("Bigfoot sound play failed:", error);
+                            });
+                            
+                            // Start sun shaking when bigfoot sound plays
+                            if (sunGroup) {
+                                isSunShaking = true;
+                                sunShakeStartTime = Date.now();
+                                sunOriginalPosition.copy(sunGroup.position);
+                            }
+                        }
+                    }, 3000);
+                } catch (error) {
+                    console.log("Error playing sounds:", error);
+                }
+            }
+
+            // Start fade out animation for the deer
+            deerGroup.children.forEach(mesh => {
+                if (mesh.material) {
+                    mesh.material.transparent = true;
+                    // Animate opacity from current value to 0 over 1 second
+                    const startOpacity = mesh.material.opacity;
+                    const startTime = Date.now();
+                    const fadeOutDuration = 1000; // 1 second
+
+                    function fadeOut() {
+                        const elapsed = Date.now() - startTime;
+                        const progress = Math.min(elapsed / fadeOutDuration, 1);
+                        
+                        mesh.material.opacity = startOpacity * (1 - progress);
+                        
+                        if (progress < 1) {
+                            requestAnimationFrame(fadeOut);
+                        } else {
+                            // Remove the deer from the scene and array when fully faded
+                            scene.remove(deerGroup);
+                            deer.splice(index, 1);
+                        }
+                    }
+                    
+                    fadeOut();
+                }
+            });
         }
         
         // Handle fade-in animation
@@ -1689,4 +1845,98 @@ function createSun() {
 // Add function to start sun setting
 function startSunset() {
     isSunSetting = true;
+}
+
+// Add function to start the train ride experience
+function startTrainRide() {
+    if (!hasStarted) {
+        hasStarted = true;
+        createDeer(); // Create deer when Train Ride is clicked
+        // Start ambient sound
+        ambientSound.play().catch(error => {
+            console.log("Ambient sound play failed:", error);
+        });
+        // Start transition to cockpit view
+        isInCockpit = true;
+        isTransitioningToCockpit = true;
+        transitionStartTime = Date.now();
+
+        // Handle top menu item fade out
+        const topMenuItem = document.querySelector('.top-menu .menu-item');
+        if (topMenuItem) {
+            // Set transition before changing classes to ensure smooth animation
+            topMenuItem.style.transition = 'opacity 4s ease';
+            // Force a reflow
+            topMenuItem.offsetHeight;
+            topMenuItem.classList.remove('visible');
+            topMenuItem.classList.add('fade-out');
+            // Ensure opacity change happens after class changes
+            requestAnimationFrame(() => {
+                topMenuItem.style.opacity = '0';
+            });
+        }
+
+        // Show bottom menu items first
+        const bottomMenuItems = document.querySelectorAll('.bottom-menu .menu-item');
+        bottomMenuItems.forEach(item => {
+            item.classList.add('visible');
+        });
+
+        // Then fade out all menu items after a short delay
+        setTimeout(() => {
+            const menuItems = document.querySelectorAll('.menu-item');
+            menuItems.forEach(item => {
+                if (!item.classList.contains('fade-out')) {  // Don't affect top menu item
+                    item.style.transition = 'opacity 0.5s ease';
+                    item.style.opacity = '0.1';  // Set to 10% opacity
+                }
+            });
+        }, 500); // Wait 500ms before fading out
+    }
+}
+
+// Add click handler to make top menu visible
+document.addEventListener('click', () => {
+    if (!introAnimationComplete) return;  // Only show after intro animation
+    const topMenu = document.querySelector('.top-menu');
+    const topMenuItem = document.querySelector('.top-menu .menu-item');
+    if (topMenu && !topMenu.classList.contains('visible')) {
+        topMenu.classList.add('visible');
+    }
+    if (topMenuItem && !topMenuItem.classList.contains('visible')) {
+        topMenuItem.classList.add('visible');
+        topMenuItem.style.opacity = '1';
+        topMenuItem.style.pointerEvents = 'auto';
+    }
+});
+
+function createStars() {
+    const starsGeometry = new THREE.BufferGeometry();
+    const starCount = 1000;
+    const positions = new Float32Array(starCount * 3);
+    
+    for (let i = 0; i < starCount; i++) {
+        // Create stars in a large hemisphere above the scene
+        const theta = Math.random() * 2 * Math.PI;
+        const phi = Math.acos(Math.random() * 2 - 1);
+        const radius = 4000 + Math.random() * 1000; // Random distance between 2000 and 3000
+        
+        positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = Math.abs(radius * Math.cos(phi)); // Keep stars above horizon
+        positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+    }
+    
+    starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    
+    const starsMaterial = new THREE.PointsMaterial({
+        color: 0xFFFFFF,
+        size: 1,
+        sizeAttenuation: false,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending
+    });
+    
+    const starField = new THREE.Points(starsGeometry, starsMaterial);
+    scene.add(starField);
 }

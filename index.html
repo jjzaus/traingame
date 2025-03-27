@@ -12,6 +12,12 @@
         <source src="horn.mp3" type="audio/mpeg">
     </audio>
     <audio id="ambientSound" src="longerambient.mp3" preload="auto"></audio>
+    <audio id="deerThudSound">
+        <source src="thud-291047.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="bigfootSound">
+        <source src="bigfoot.mp3" type="audio/mpeg">
+    </audio>
     <style>
         body {
             margin: 0;
@@ -29,17 +35,48 @@
         canvas:active {
             cursor: grabbing;
         }
-        .menu-bar {
+        .top-menu {
             position: fixed;
             top: 1%;
             left: 5%;
-            width: 100%;
+            width: auto;
+            height: auto;
+            background-color: transparent;
+            z-index: 1000;
+            pointer-events: none;
+            opacity: 0;  /* Start fully hidden */
+            transition: opacity 4s ease;  /* Add transition to container */
+        }
+        .top-menu .menu-item {
+            opacity: 0;  /* Start hidden */
+            transition: all 4s ease;  /* Match 4s timing for consistency */
+            pointer-events: none;
+            color: whitesmoke;
+            letter-spacing: 10px;
+        }
+        .top-menu .menu-item.visible {
+            opacity: 1;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+        .top-menu .menu-item.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .top-menu.visible {
+            opacity: 1;  /* Show when visible class is added */
+            pointer-events: auto;
+        }
+        .bottom-menu {
+            position: fixed;
+            bottom: 2%;
+            left: 3%;
+            width: auto;
             height: auto;
             background-color: transparent;
             display: flex;
             flex-direction: column;
-            justify-content: left;
-            align-items: flex-start;
+            justify-content: center;
             gap: 10px;
             z-index: 1000;
             pointer-events: none;
@@ -47,7 +84,7 @@
         .menu-item {
             color: white;
             font-family: 'Young Serif', serif;
-            font-size: 40px;
+            font-size: 30px;
             text-decoration: none;
             padding: 0px 0px;
             cursor: default;
@@ -61,14 +98,35 @@
             pointer-events: none;
         }
         .menu-item:hover {
-            transform: scale(1.1);
-            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            transform: scale(1.01);
+            text-shadow: 0 0 8px 0x8B0000;
         }
         .menu-item.visible {
             opacity: 1;
             cursor: pointer;
             pointer-events: auto;
             transition: opacity 3.5s ease;
+        }
+        
+        /* Add specific class for top menu item */
+        .top-menu .menu-item.visible {
+            opacity: 1;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: opacity 3.5s ease;
+        }
+
+        /* Add specific class for bottom menu items */
+        .bottom-menu .menu-item {
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+        }
+        
+        .bottom-menu .menu-item.visible {
+            opacity: 0.0;  /* This matches the fade out opacity in startTrainRide */
+            cursor: pointer;
+            pointer-events: auto;
         }
         
         .rules-text, .controls-text {
@@ -96,17 +154,16 @@
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
-            
-
-
         }
     </style>
 </head>
 <body>
-    <div class="menu-bar">
-        <a class="menu-item" href="index.html"><h3>TRAIN RIDE</h3></a>
-        <a class="menu-item" onclick="toggleRules()">Rules</a>
-        <a class="menu-item" onclick="switchView()">Switch View</a>
+    <div class="top-menu">
+        <a class="menu-item" onclick="startTrainRide()"><h1>RIDE</h1></a>
+    </div>
+    <div class="bottom-menu">
+        <a class="menu-item" onclick="blowWhistle()">[SPACEBAR] Blow Whistle</a>
+        <a class="menu-item" onclick="switchView()">[C] Change View</a>
     </div>
     <div class="rules-text">1. Help the train get to the end of the Station
         <br>2. [SPACEBAR] to blow your horn to scare the deer off the track
@@ -117,11 +174,12 @@
     <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.0/dist/nipplejs.min.js"></script>
     <script src="main.js"></script>
     <script>
-        function toggleRules() {
-            const rulesText = document.querySelector('.rules-text');
-            const controlsText = document.querySelector('.controls-text');
-            rulesText.classList.toggle('visible');
-            controlsText.classList.remove('visible'); // Hide controls if showing
+        // Function to simulate spacebar press for whistle
+        function blowWhistle() {
+            const keyEvent = new KeyboardEvent('keydown', {
+                code: 'Space'
+            });
+            document.dispatchEvent(keyEvent);
         }
 
         function toggleControls() {
