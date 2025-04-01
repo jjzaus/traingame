@@ -34,7 +34,7 @@ const TREE_RENDER_DISTANCE = 500;  // How far ahead/behind to show trees
 let mountains = [];
 const NUM_MOUNTAINS = 50;
 let deer = [];
-const DEER_SPACING = 5 + Math.random() * 1.5; // Fixed spacing of 100 units
+const DEER_SPACING = 15 + Math.random() * 1.5; // Fixed spacing of 100 units
 const NUM_DEER = Math.floor(TRACK_SEGMENT_LENGTH / DEER_SPACING); // Number of deer based on track length
 let isWhistling = false;
 let isHeadlightBright = false;  // Track if headlight is in bright mode
@@ -620,7 +620,7 @@ function createForest() {
     });
 
     trees = [];
-    for (let i = 0; i < 3000; i++) {
+    for (let i = 0; i < 1000; i++) {
         const treeGroup = new THREE.Group();
         
         // Create cone (tree top)
@@ -939,9 +939,9 @@ function initMouseControls() {
         }
 
         // Update camera angles
-        cameraAngleHorizontal += (touchX - lastTouchX) * 0.005;
+        cameraAngleHorizontal += (touchX - lastTouchX) * 0.05;
         
-        const verticalSensitivity = 0.002;
+        const verticalSensitivity = 0.02;
         const minVerticalAngle = 0;
         const maxVerticalAngle = 0.2;
         

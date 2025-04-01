@@ -69,6 +69,11 @@
             opacity: 1;  /* Show when visible class is added */
             pointer-events: auto;
         }
+        .top-menu:hover {
+            transform: scale(1.1);
+            text-shadow: 0 0 20px 0x8B0000;
+            outline: 10px solid 0x8B0000;
+        }
         .bottom-menu {
             position: fixed;
             bottom: 2%;
@@ -202,7 +207,7 @@
         <div id="startText">START GAME</div>
     </div>
     <div class="top-menu">
-        <a class="menu-item" onclick="startTrainRide()"><h1>THE NIGHT TRAIN</h1></a>
+        <a class="menu-item" onclick="startTrainRide()"><h1>BEGIN: THE NIGHT TRAIN</h1></a>
     </div>
     <div class="bottom-menu">
         <a class="menu-item"><b>Avoid the Deer</b></a>
