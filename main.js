@@ -51,7 +51,7 @@ let deerCollisionCount = 0;
 const INITIAL_BIGFOOT_VOLUME = 0.03;
 const BIGFOOT_VOLUME_INCREMENT = 0.01;
 let deerThudSoundVolume = 1.0;
-const WHISTLE_DURATION = 1000; // 1 second in milliseconds
+const WHISTLE_DURATION = 800; // 1 second in milliseconds
 let ambientSound;
 let hasStarted = false; // Add flag to track if experience has started
 let gameEnded = false;
@@ -77,6 +77,7 @@ let sunShakeStartTime = 0;
 const SUN_SHAKE_DURATION = 3000; // 4 seconds to match bigfoot sound
 const SUN_SHAKE_INTENSITY = 5; // Intensity of the shake
 const sunOriginalPosition = new THREE.Vector3();
+let hasInitialized = false; // Add flag to track if game has been initialized
 
 
 // Initialize the scene
@@ -1183,7 +1184,7 @@ function createSmokeParticles() {
     // Try to load the smoke texture
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
-        'smoke-particle.png',
+        'smoke-particl.png',
         (texture) => {
             console.log('Smoke texture loaded successfully');
             material.map = texture;
@@ -1540,8 +1541,33 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Initialize and start animation
-init();
-animate();
+function Start() {
+    const startScreen = document.getElementById('startScreen');
+    
+    // Add click handler to start screen
+    startScreen.addEventListener('click', () => {
+        // Add fade out animation
+        startScreen.classList.add('fade-out');
+        
+        // Remove start screen after animation
+        setTimeout(() => {
+            startScreen.remove();
+        }, 1000);
+
+        // Initialize game if not already done
+        if (!hasInitialized) {
+            hasInitialized = true;
+            init();
+            animate();
+            // Record start time for intro animation
+            introStartTime = Date.now();
+        }
+    });
+}
+
+// Remove the direct init() and animate() calls at the bottom of the file
+// and replace with Start() call
+Start();
 
 function cleanup() {
     // Dispose geometries
@@ -1664,18 +1690,23 @@ function updateDeer() {
         const head = deerGroup.children[2];  // Head is the third child
         
         // Only react to whistle if within range (40 units) and not already alerted
-        if (isWhistling && !deerGroup.userData.hasAlerted && distanceToTrain <= 40) {
-            // Alert position - head up looking around
-            neck.position.set(0.29, 0.8, 0);
-            neck.rotation.set(0, 0, Math.PI / 3);
-            head.position.set(0.45, 0.9, 0);
-            head.rotation.set(0, 0, Math.PI / 2);
-            deerGroup.userData.hasAlerted = true;  // Mark that this deer has been alerted
-            
-            // Set a timeout to start fleeing after 1 second
-            setTimeout(() => {
-                deerGroup.userData.isFleeing = true;
-            }, 1000);
+        if (isWhistling && distanceToTrain <= 40) {
+            if (!deerGroup.userData.hasAlerted) {
+                // Alert position - head up looking around
+                neck.position.set(0.29, 0.8, 0);
+                neck.rotation.set(0, 0, Math.PI / 3);
+                head.position.set(0.45, 0.9, 0);
+                head.rotation.set(0, 0, Math.PI / 2);
+                deerGroup.userData.hasAlerted = true;  // Mark that this deer has been alerted
+                
+                // Set a timeout to start fleeing after 1 second
+                setTimeout(() => {
+                    deerGroup.userData.isFleeing = true;
+                }, 1000);
+            } else if (deerGroup.userData.isFleeing) {
+                // If already fleeing and whistle is heard again, change direction slightly
+                deerGroup.rotateY(Math.PI / 60);
+            }
         }
         
         if (deerGroup.userData.isFleeing) {
