@@ -79,6 +79,11 @@ const SUN_SHAKE_INTENSITY = 5; // Intensity of the shake
 const sunOriginalPosition = new THREE.Vector3();
 let hasInitialized = false; // Add flag to track if game has been initialized
 
+// Add flash variables at the top with other sun variables
+let isSunFlashing = false;
+const FLASH_DURATION = 200; // 200ms for a quick flash
+let sunFlashStartTime = 0;
+const FLASH_INTENSITY = 1; // How much brighter the flash will be
 
 // Initialize the scene
 function init() {
@@ -1418,6 +1423,29 @@ function animate() {
             }
         }
 
+        // Handle sun flash effect
+        if (isSunFlashing && sunGroup) {
+            const elapsedFlashTime = Date.now() - sunFlashStartTime;
+            if (elapsedFlashTime < FLASH_DURATION) {
+                const flashProgress = 1 - (elapsedFlashTime / FLASH_DURATION);
+                const flashIntensity = FLASH_INTENSITY * flashProgress;
+                
+                const sunMesh = sunGroup.children[0];
+                const sunLight = sunGroup.children[1];
+                
+                // Increase emissive intensity and light intensity
+                sunMesh.material.emissiveIntensity = sunMesh.userData.originalEmissive + flashIntensity;
+                sunLight.intensity = sunLight.userData.originalIntensity + flashIntensity;
+            } else {
+                // Reset to original intensities
+                const sunMesh = sunGroup.children[0];
+                const sunLight = sunGroup.children[1];
+                sunMesh.material.emissiveIntensity = sunMesh.userData.originalEmissive;
+                sunLight.intensity = sunLight.userData.originalIntensity;
+                isSunFlashing = false;
+            }
+        }
+
         // Add sun scale animation
         if (sunGroup && sunScale !== targetSunScale) {
             // Smoothly interpolate current scale to target scale
@@ -1606,6 +1634,18 @@ function updateDeer() {
         if (distanceToTrain < 2 && !deerGroup.userData.hasCollided) {
             deerGroup.userData.hasCollided = true;
             targetSunScale += SUN_SCALE_INCREASE;
+            
+            // Trigger sun flash
+            if (sunGroup) {
+                isSunFlashing = true;
+                sunFlashStartTime = Date.now();
+                // Store original intensities
+                const sunMesh = sunGroup.children[0];
+                const sunLight = sunGroup.children[1];
+                sunMesh.userData.originalEmissive = sunMesh.material.emissiveIntensity;
+                sunLight.userData.originalIntensity = sunLight.intensity;
+            }
+            
             // Start camera shake
             isShaking = true;
             shakeStartTime = Date.now();
@@ -1621,7 +1661,7 @@ function updateDeer() {
                     
                     // Increment collision count and play bigfoot sound after 1 second
                     deerCollisionCount++;
-                    const bigfootVolume = Math.min(1.0, INITIAL_BIGFOOT_VOLUME + (BIGFOOT_VOLUME_INCREMENT * (deerCollisionCount - 1)));
+                    const bigfootVolume = Math.min(0.8, INITIAL_BIGFOOT_VOLUME + (BIGFOOT_VOLUME_INCREMENT * (deerCollisionCount - 1)));
                     
                     setTimeout(() => {
                         if (bigfootSound) {
